@@ -38,7 +38,7 @@
     fillSelect('reportCategory',categories,$('reportCategory')?.value,'All categories');
     fillSelect('reportDistributor',distributors,$('reportDistributor')?.value,'All distributors');
   }
-  async function loadInventory(){if(!currentUser)return;sync('Syncing…');const {data,error}=await db.from('inventory').select('*').order('updated_at',{ascending:false});if(error){sync('Sync failed',true);toast(error.message);return}inventory=(data||[]).map(fromDb);await loadLists();$('headerCount').textContent=`${inventory.length} item${inventory.length===1?'':'s'}`;renderList();renderStats();if(isAdmin())await renderAdmin();sync('Live')}
+  async function loadInventory(){if(!currentUser)return;sync('Syncing…');const {data,error}=await db.from('inventory').select('*').order('updated_at',{ascending:false});if(error){sync('Sync failed',true);toast(error.message);return}inventory=(data||[]).map(fromDb);await loadLists();refreshInventoryCategoryFilter();$('headerCount').textContent=`${inventory.length} item${inventory.length===1?'':'s'}`;renderList();renderStats();if(isAdmin())await renderAdmin();sync('Live')}
   function subscribe(){if(channel)db.removeChannel(channel);channel=db.channel('inventory-live').on('postgres_changes',{event:'*',schema:'public',table:'inventory'},()=>loadInventory()).subscribe()}
   function findProduct(code){return inventory.find(p=>sameBarcode(p.barcode,code))}
   async function lookupCatalog(code){const exact=normalizeBarcode(code);let {data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').eq('barcode',exact).maybeSingle();if(error)throw error;if(!data){const stripped=exact.replace(/^0+/,'');if(stripped!==exact){({data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').eq('barcode',stripped).maybeSingle());if(error)throw error}}return data}
@@ -64,7 +64,40 @@
   $('panelSave').onclick=async()=>{const product={barcode:normalizeBarcode($('fieldBarcode').value),name:$('fieldName').value.trim(),price:$('fieldPrice').value===''?null:Math.max(0,+$('fieldPrice').value),cost:$('fieldCost').value===''?null:Math.max(0,+$('fieldCost').value),category:$('fieldCategory').value||null,distributor:$('fieldDistributor').value||null,floor_qty:Math.max(0,+$('fieldFloorQty').value||0),backroom_qty:Math.max(0,+$('fieldBackQty').value||0),backroom_cases:Math.max(0,+$('fieldCases').value||0),units_per_case:Math.max(0,+$('fieldUnitsPerCase').value||0),low_stock_threshold:Math.max(0,+$('fieldLowStock').value||0),low_stock_alert_enabled:$('fieldLowStockEnabled').checked,status:$('statusOutBtn').classList.contains('on')?'out_of_stock':'in_stock',updated_by:currentUser.id,updated_at:new Date().toISOString()};if(!product.barcode||!product.name){toast('Barcode and product name are required');return}let error;if(currentEditId){({error}=await db.from('inventory').update(product).eq('id',currentEditId));if(!error)await db.from('inventory_history').insert({inventory_id:currentEditId,barcode:product.barcode,product_name:product.name,action:'edit',location:'all',quantity_change:0,changed_by:currentUser.id})}else{const r=await db.from('inventory').insert(product).select('id').single();error=r.error;if(!error)await db.from('inventory_history').insert({inventory_id:r.data.id,barcode:product.barcode,product_name:product.name,action:'create',location:'all',quantity_change:product.floor_qty+product.backroom_qty+product.backroom_cases*product.units_per_case,changed_by:currentUser.id})}if(error){toast(error.message);return}closePanel();toast('Saved');await loadInventory()};
   $('panelDelete').onclick=async()=>{if(!isAdmin()||!currentEditId)return;const p=inventory.find(x=>x.id===currentEditId);const {error}=await db.from('inventory').delete().eq('id',currentEditId);if(error){toast(error.message);return}await db.from('inventory_history').insert({inventory_id:null,barcode:p.barcode,product_name:p.name,action:'delete',location:'all',quantity_change:-totalUnits(p),changed_by:currentUser.id});closePanel();await loadInventory()};
   $('searchInput').oninput=renderList;
-  function renderList(){const q=$('searchInput').value.trim().toLowerCase();let rows=inventory.filter(p=>!q||[p.name,p.barcode,p.category,p.distributor].some(v=>String(v||'').toLowerCase().includes(q)));$('listWrap').innerHTML=rows.length?rows.map(p=>`<div class="row" data-id="${p.id}"><div class="info"><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.barcode)}${p.category?' · '+esc(p.category):''}${p.distributor?' · '+esc(p.distributor):''}</div></div><div class="right"><div><div class="qty">${totalUnits(p)}</div><div class="loc">F ${p.floorQty} · B ${p.backroomQty}</div></div><span class="badge ${p.status==='out_of_stock'?'out':'in'}">${p.status==='out_of_stock'?'Out':'In stock'}</span></div></div>`).join(''):`<div class="empty"><div class="icon">📦</div><p>No matching products.</p></div>`;document.querySelectorAll('#listWrap .row').forEach(r=>r.onclick=()=>openPanel(inventory.find(p=>p.id===r.dataset.id)))}
+  $('inventoryCategoryFilter').onchange=renderList;
+  $('inventoryStatusFilter').onchange=renderList;
+  $('inventoryClearFilters').onclick=()=>{
+    $('searchInput').value='';
+    $('inventoryCategoryFilter').value='';
+    $('inventoryStatusFilter').value='';
+    renderList();
+  };
+
+  function refreshInventoryCategoryFilter(){
+    const select=$('inventoryCategoryFilter');
+    if(!select)return;
+    const selected=select.value;
+    const values=[...new Set(inventory.map(p=>p.category||'Uncategorized'))].sort((a,b)=>a.localeCompare(b));
+    select.innerHTML='<option value="">All categories</option>'+values.map(value=>`<option value="${esc(value)}">${esc(value)}</option>`).join('');
+    if(values.includes(selected))select.value=selected;
+  }
+
+  function renderList(){
+    const q=$('searchInput').value.trim().toLowerCase();
+    const category=$('inventoryCategoryFilter').value;
+    const status=$('inventoryStatusFilter').value;
+    const rows=inventory.filter(p=>{
+      const productCategory=p.category||'Uncategorized';
+      const matchesSearch=!q||[p.name,p.barcode,p.category,p.distributor].some(v=>String(v||'').toLowerCase().includes(q));
+      const matchesCategory=!category||productCategory===category;
+      const matchesStatus=!status||p.status===status;
+      return matchesSearch&&matchesCategory&&matchesStatus;
+    });
+
+    $('inventoryResultCount').textContent=`Showing ${rows.length} of ${inventory.length} product${inventory.length===1?'':'s'}`;
+    $('listWrap').innerHTML=rows.length?rows.map(p=>`<div class="row" data-id="${p.id}"><div class="info"><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.barcode)}${p.distributor?' · '+esc(p.distributor):''}</div></div><div class="category-cell">${esc(p.category||'Uncategorized')}</div><div class="right"><div><div class="qty">${totalUnits(p)}</div><div class="loc">F ${p.floorQty} · B ${p.backroomQty}</div></div><span class="badge ${p.status==='out_of_stock'?'out':'in'}">${p.status==='out_of_stock'?'Out':'In stock'}</span></div></div>`).join(''):`<div class="empty"><div class="icon">📦</div><p>No matching products.</p></div>`;
+    document.querySelectorAll('#listWrap .row').forEach(r=>r.onclick=()=>openPanel(inventory.find(p=>p.id===r.dataset.id)));
+  }
   function stats(filtered=inventory){return{products:filtered.length,units:filtered.reduce((s,p)=>s+totalUnits(p),0),cases:filtered.reduce((s,p)=>s+p.backroomCases,0),out:filtered.filter(p=>totalUnits(p)<=0).length,retail:filtered.reduce((s,p)=>s+totalUnits(p)*(p.price||0),0),cost:filtered.reduce((s,p)=>s+totalUnits(p)*(p.cost||0),0)}}
   function renderStats(){const s=stats();$('statTotal').textContent=s.products;$('statUnits').textContent=s.units;$('statCases').textContent=s.cases;$('statOut').textContent=s.out}
   $('exportBtn').onclick=()=>{if(!inventory.length)return toast('Nothing to export');const rows=inventory.map(p=>({'Barcode':p.barcode,'Product Name':p.name,'Price':p.price??'','Cost':p.cost??'','Category':p.category,'Distributor':p.distributor,'On Floor':p.floorQty,'Back Room':p.backroomQty,'Cases':p.backroomCases,'Units per Case':p.unitsPerCase,'Total Units':totalUnits(p),'Retail Value':totalUnits(p)*(p.price||0),'Cost Value':totalUnits(p)*(p.cost||0),'Low Stock Alert':p.lowStockAlertEnabled?'On':'Off','Low Stock Threshold':p.lowStockThreshold,'Status':p.status}));const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Inventory');XLSX.writeFile(wb,`shelf-inventory-${new Date().toISOString().slice(0,10)}.xlsx`)};

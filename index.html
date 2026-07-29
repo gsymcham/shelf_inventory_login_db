@@ -3,11 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
-<<<<<<< HEAD
-<title>Shelf — Inventory Pro V5 Responsive</title>
-=======
 <title>Inventory Management Responsive</title>
->>>>>>> 50490d1c5cf6b8c9add26ef8a54eceb340994892
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
@@ -320,11 +316,7 @@
 
   <div class="auth-overlay" id="authOverlay">
     <div class="auth-card">
-<<<<<<< HEAD
-      <h2>Shelf2 Inventory</h2>
-=======
       <h2>Inventory Management Responsive</h2>
->>>>>>> 50490d1c5cf6b8c9add26ef8a54eceb340994892
       <p>Sign in to access the shared inventory. Every authorized user sees the same products and quantities.</p>
       <div class="auth-tabs">
         <button class="btn btn-ink" id="authSignInTab">Sign in</button>
@@ -464,11 +456,7 @@
         <div class="scroll-table"><table class="data-table"><thead><tr><th>Group</th><th>Products</th><th>Units</th><th>Retail</th><th>Cost</th></tr></thead><tbody id="reportRows"></tbody></table></div>
       </div>
 
-<<<<<<< HEAD
-      <div class="admin-card">
-=======
       <div class="admin-card collapse-card">
->>>>>>> 50490d1c5cf6b8c9add26ef8a54eceb340994892
         <h2>Recent inventory history</h2>
         <div class="scroll-table"><table class="data-table"><thead><tr><th>When</th><th>Product</th><th>Action</th><th>Change</th><th>User</th></tr></thead><tbody id="historyRows"></tbody></table></div>
       </div>
@@ -697,11 +685,7 @@
     $('manageConfirm').disabled=true;const {error}=await db.rpc('manage_reference_value',params);$('manageConfirm').disabled=false;
     if(error){toast(error.message);return}closeManage();await loadInventory();toast(`${kind==='category'?'Category':'Distributor'} updated`);
   };
-<<<<<<< HEAD
-  async function renderAdmin(){if(!isAdmin())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));renderReports();const {data}=await db.from('inventory_history').select('*').order('changed_at',{ascending:false}).limit(100);$('historyRows').innerHTML=(data||[]).map(h=>`<tr><td>${new Date(h.changed_at).toLocaleString()}</td><td>${esc(h.product_name||h.barcode)}</td><td>${esc(h.action)}</td><td>${h.quantity_change>0?'+':''}${h.quantity_change} ${esc(h.location||'')}</td><td>${esc(h.changed_by_email||'User')}</td></tr>`).join('')||'<tr><td colspan="5">No history yet.</td></tr>'}
-=======
   async function renderAdmin(){if(!isAdmin())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));renderReports();const {data}=await db.from('inventory_history').select('*').order('changed_at',{ascending:false}).limit(10);$('historyRows').innerHTML=(data||[]).map(h=>`<tr><td>${new Date(h.changed_at).toLocaleString()}</td><td>${esc(h.product_name||h.barcode)}</td><td>${esc(h.action)}</td><td>${h.quantity_change>0?'+':''}${h.quantity_change} ${esc(h.location||'')}</td><td>${esc(h.changed_by_email||'User')}</td></tr>`).join('')||'<tr><td colspan="5">No history yet.</td></tr>'}
->>>>>>> 50490d1c5cf6b8c9add26ef8a54eceb340994892
   function renderReports(){const cat=$('reportCategory').value,dist=$('reportDistributor').value,filtered=inventory.filter(p=>(!cat||p.category===cat)&&(!dist||p.distributor===dist)),groups={};filtered.forEach(p=>{const k=p.category||'Uncategorized';(groups[k]??=[]).push(p)});$('reportRows').innerHTML=Object.entries(groups).sort().map(([k,v])=>{const s=stats(v);return`<tr><td>${esc(k)}</td><td>${s.products}</td><td>${s.units}</td><td>${money.format(s.retail)}</td><td>${money.format(s.cost)}</td></tr>`}).join('')||'<tr><td colspan="5">No report data.</td></tr>'}
   $('reportCategory').onchange=renderReports;$('reportDistributor').onchange=renderReports;
   $('adminAddCategory').onclick=async()=>{await addList('category',$('adminCategoryName').value);$('adminCategoryName').value='';if(isAdmin())renderAdmin()};$('adminAddDistributor').onclick=async()=>{await addList('distributor',$('adminDistributorName').value);$('adminDistributorName').value='';if(isAdmin())renderAdmin()};
@@ -719,8 +703,4 @@
 })();
 </script>
 </body>
-<<<<<<< HEAD
 </html>
-=======
-</html>
->>>>>>> 50490d1c5cf6b8c9add26ef8a54eceb340994892

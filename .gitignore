@@ -2,3 +2,7 @@
 /SETUP-professional.txt
 /supabase-professional-upgrade.sql
 /shelf_inventory_login_db
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

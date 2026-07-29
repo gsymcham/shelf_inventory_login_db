@@ -9,7 +9,11 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<style>
+<link rel="stylesheet" href="styles.css">
+ <script src="script.js" defer></script>
+
+
+<!--<style>
   :root{
     --paper:#F7F6F2;
     --ink:#1B1B18;
@@ -311,6 +315,7 @@
   }
 
 </style>
+-->
 </head>
 <body>
 
@@ -578,7 +583,7 @@
   <div class="toast" id="toast"></div>
 </div>
 
-<script>
+<!--<script>
 (function(){
   const SUPABASE_URL = 'https://palrtkdvdtkqmvkjfuud.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhbHJ0a2R2ZHRrcW12a2pmdXVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwOTEyMjQsImV4cCI6MjEwMDY2NzIyNH0.5gYn9PvkMZFk922qULn4GmCQvgUnHeiES4mSEVe5q0w';
@@ -701,6 +706,6 @@
   $('signOutBtn').onclick=()=>db.auth.signOut();
   async function applySession(session){currentUser=session?.user||null;$('authOverlay').classList.toggle('hidden',!!currentUser);$('signOutBtn').style.display=currentUser?'block':'none';$('userEmail').textContent=currentUser?.email||'';if(currentUser){await loadRole();subscribe();await loadInventory()}else{inventory=[];userRole='staff';document.body.classList.remove('is-admin');sync('Offline')}}db.auth.onAuthStateChange((e,s)=>applySession(s));db.auth.getSession().then(({data})=>applySession(data.session));
 })();
-</script>
+</script>-->
 </body>
 </html>

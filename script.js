@@ -669,7 +669,7 @@
             data
         } = await db.from('inventory_history').select('*').order('changed_at', {
             ascending: false
-        }).limit(20);
+        }).limit(5);
         $('historyRows').innerHTML = (data || []).map(h => `<tr><td>${new Date(h.changed_at).toLocaleString()}</td><td>${esc(h.product_name||h.barcode)}</td><td>${esc(h.action)}</td><td>${h.quantity_change>0?'+':''}${h.quantity_change} ${esc(h.location||'')}</td><td>${esc(h.changed_by_email||'User')}</td></tr>`).join('') || '<tr><td colspan="5">No history yet.</td></tr>'
     }
 

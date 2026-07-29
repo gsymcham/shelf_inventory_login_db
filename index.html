@@ -103,14 +103,24 @@
 
       <div class="inventory-result-count" id="inventoryResultCount"></div>
 
-      <div class="inventory-list-header" aria-hidden="true">
-        <div>Product</div>
-        <div>Category</div>
-        <div class="inventory-header-qty">Quantity</div>
-        <div>Status</div>
+      <div class="inventory-table-wrap">
+        <table class="inventory-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Barcode</th>
+              <th>Category</th>
+              <th>Distributor</th>
+              <th class="number-column">Floor</th>
+              <th class="number-column">Backroom</th>
+              <th class="number-column">Cases</th>
+              <th class="number-column">Total</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryRows"></tbody>
+        </table>
       </div>
-
-      <div id="listWrap" class="inventory-list"></div>
     </section>
 
     <!-- EXPORT VIEW -->
@@ -187,7 +197,48 @@
       <details class="admin-card collapse-card">
         <summary>Recent inventory history</summary>
         <div class="collapse-body">
-          <div class="scroll-table"><table class="data-table"><thead><tr><th>When</th><th>Product</th><th>Action</th><th>Change</th><th>User</th></tr></thead><tbody id="historyRows"></tbody></table></div>
+          <div class="history-toolbar">
+            <div class="history-date-group">
+              <div class="history-field">
+                <label for="historyStartDate">Start date</label>
+                <input id="historyStartDate" type="date">
+              </div>
+              <div class="history-field">
+                <label for="historyEndDate">End date</label>
+                <input id="historyEndDate" type="date">
+              </div>
+              <button class="btn btn-ink btn-sm" id="historyApplyDateButton" type="button">Apply</button>
+              <button class="btn btn-line btn-sm" id="historyTodayButton" type="button">Today</button>
+            </div>
+
+            <div class="history-page-group">
+              <div class="history-field">
+                <label for="historyPageSize">Rows per page</label>
+                <select id="historyPageSize">
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option id="historyPageSizeAll" value="all">All</option>
+                </select>
+              </div>
+              <div class="history-pagination">
+                <button class="btn btn-line btn-sm" id="historyPreviousButton" type="button">Previous</button>
+                <span id="historyPageInfo">Page 1</span>
+                <button class="btn btn-line btn-sm" id="historyNextButton" type="button">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <p class="history-filter-message" id="historyFilterMessage" aria-live="polite"></p>
+
+          <div class="scroll-table">
+            <table class="data-table">
+              <thead>
+                <tr><th>When</th><th>Product</th><th>Action</th><th>Change</th><th>User</th></tr>
+              </thead>
+              <tbody id="historyRows"></tbody>
+            </table>
+          </div>
         </div>
       </details>
     </section>

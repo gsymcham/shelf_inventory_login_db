@@ -92,21 +92,17 @@
     background:none; border:none; text-decoration:underline;}
 
   /* Inventory view */
-  .inventory-filters{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px;}
-  .inventory-filters .search-bar{margin:0;}
-  .search-bar,.inventory-filters select{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-size:14px;color:var(--ink);}
-  .inventory-result-count{font-size:11.5px;color:var(--ink-soft);margin:0 2px 10px;}
-  .inventory-list-header{display:none;}
-  .inventory-list{display:flex;flex-direction:column;gap:8px;}
-  .row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 14px;}
+  .search-bar{width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:10px;
+    background:var(--panel); font-size:14px; margin-bottom:14px;}
+  .row{display:flex; align-items:center; justify-content:space-between; gap:12px;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:13px 14px; margin-bottom:8px;}
   .row .info{min-width:0;}
-  .row .name{font-size:14.5px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .row .meta{font-size:11.5px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;}
-  .row .category-cell{font-size:12px;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .row .right{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-shrink:0;}
-  .row .qty{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15px;text-align:right;}
-  .row .loc{font-size:10.5px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;text-align:right;margin-top:2px;}
-  .row .cases-flag{font-size:10px;color:var(--amber-ink);background:#FBEBCB;padding:2px 6px;border-radius:6px;margin-top:3px;display:inline-block;}
+  .row .name{font-size:14.5px; font-weight:600; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .row .meta{font-size:11.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace;}
+  .row .right{display:flex; align-items:center; gap:10px; flex-shrink:0;}
+  .row .qty{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:15px; text-align:right;}
+  .row .loc{font-size:10.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; text-align:right; margin-top:2px;}
+  .row .cases-flag{font-size:10px; color:var(--amber-ink); background:#FBEBCB; padding:2px 6px; border-radius:6px; margin-top:3px; display:inline-block;}
   .badge{font-size:10.5px; font-weight:700; padding:4px 8px; border-radius:20px; text-transform:uppercase; letter-spacing:0.03em;}
   .badge.in{background:var(--green-bg); color:var(--green);}
   .badge.out{background:var(--rust-bg); color:var(--rust);}
@@ -295,14 +291,9 @@
     #view-scan .mode-switch,#view-scan .mode-help{grid-column:1/-1;}
     #view-scan .scan-card{margin:0;position:sticky;top:112px;}
     #view-scan .quick-adjust{margin:0;}
-    .inventory-filters{grid-template-columns:minmax(280px,1fr) minmax(180px,240px) minmax(150px,190px) auto;align-items:center;}
-    .inventory-list-header{display:grid;grid-template-columns:minmax(260px,2fr) minmax(160px,1fr) minmax(110px,.65fr) minmax(110px,.65fr);gap:18px;padding:0 16px 8px;font-size:10.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;}
-    .inventory-header-qty{text-align:right;}
-    .inventory-list{gap:8px;}
-    .inventory-list .row{grid-template-columns:minmax(260px,2fr) minmax(160px,1fr) minmax(110px,.65fr) minmax(110px,.65fr);gap:18px;min-height:66px;padding:12px 16px;}
-    .inventory-list .row .right{display:contents;}
-    .inventory-list .row .right>div{justify-self:end;}
-    .inventory-list .row .badge{justify-self:start;}
+    #view-inventory .search-bar{max-width:560px;}
+    #inventoryList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    #inventoryList .row{margin:0;min-height:78px;}
     #view-export .export-card{max-width:760px;margin:40px auto 0;}
     #view-admin.active{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start;}
     #view-admin .dashboard-grid{grid-column:1/-1;}
@@ -314,30 +305,167 @@
   }
 
   @media (min-width: 1380px){
+    #inventoryList{grid-template-columns:repeat(3,minmax(0,1fr));}
     .view{max-width:1480px;}
   }
 
 
-/* Inventory table */
-.inventory-table-wrap{width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--paper)}
-.inventory-table{width:100%;min-width:1040px;border-collapse:collapse}
-.inventory-table th,.inventory-table td{padding:13px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
-.inventory-table th{background:var(--cream);font-size:12px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:1}
-.inventory-table tbody tr:last-child td{border-bottom:0}
-.inventory-table tbody tr:hover{background:rgba(0,0,0,.025);cursor:pointer}
-.inventory-product-name{font-weight:700;min-width:240px;white-space:normal!important}
-.number-column{text-align:right!important;font-variant-numeric:tabular-nums}
-.inventory-total{font-weight:800}
-.empty-table-cell{text-align:center!important;padding:30px!important;color:var(--muted)}
+/* Inventory table: desktop table, compact mobile cards */
+.inventory-filters{
+  display:grid;
+  grid-template-columns:minmax(260px,1fr) auto auto auto;
+  gap:8px;
+  align-items:center;
+  margin-bottom:8px;
+}
+.inventory-filters input,
+.inventory-filters select{
+  min-height:42px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel);
+  padding:10px 12px;
+  font:inherit;
+}
+.inventory-result-count{
+  margin:0 0 10px;
+  color:var(--ink-soft);
+  font-size:11px;
+}
+.inventory-table-wrap{
+  width:100%;
+  overflow-x:auto;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--panel);
+}
+.inventory-table{
+  width:100%;
+  min-width:980px;
+  border-collapse:collapse;
+}
+.inventory-table th,
+.inventory-table td{
+  padding:12px 10px;
+  border-bottom:1px solid var(--line);
+  text-align:left;
+  vertical-align:middle;
+  white-space:nowrap;
+}
+.inventory-table th{
+  background:var(--paper);
+  color:var(--ink-soft);
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.inventory-table tbody tr:last-child td{border-bottom:none;}
+.inventory-table tbody tr{cursor:pointer;}
+.inventory-table tbody tr:hover{background:rgba(0,0,0,.018);}
+.inventory-table .number-column{text-align:right;font-family:'IBM Plex Mono',monospace;}
+.product-name{font-weight:700;}
+.mobile-product-meta,.mobile-location{display:none;}
+.inventory-empty{text-align:center!important;padding:28px!important;color:var(--ink-soft);}
 
-/* History filtering and pagination */
-.history-toolbar{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;flex-wrap:wrap;margin-bottom:10px}
-.history-date-group,.history-page-group,.history-pagination{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
-.history-field label{display:block;margin-bottom:5px;font-size:12px;font-weight:700;color:var(--muted)}
-.history-field input,.history-field select{min-height:38px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font:inherit}
-.history-pagination{align-items:center}
-#historyPageInfo{min-width:150px;text-align:center;font-size:13px;color:var(--muted)}
-.history-filter-message{min-height:18px;margin:0 0 10px;font-size:13px;color:var(--muted)}
-.history-filter-message.error{color:var(--rust)}
-#historyPageSize option:disabled{color:#999}
-@media(max-width:760px){.history-toolbar,.history-date-group,.history-page-group{align-items:stretch;flex-direction:column}.history-pagination{flex-direction:row;align-items:center}.history-field input,.history-field select{width:100%}}
+@media(max-width:760px){
+  .inventory-filters{
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+  }
+  .inventory-filters .search-bar{grid-column:1/-1;}
+  .inventory-filters .btn{width:100%;}
+  .inventory-result-count{margin:2px 2px 10px;}
+  .inventory-table-wrap{
+    overflow:visible;
+    border:0;
+    border-radius:0;
+    background:transparent;
+  }
+  .inventory-table{
+    display:block;
+    min-width:0;
+    width:100%;
+  }
+  .inventory-table thead{display:none;}
+  .inventory-table tbody{display:grid;gap:10px;}
+  .inventory-table tr.inventory-row{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto auto;
+    grid-template-areas:
+      'product total status'
+      'product total status';
+    align-items:center;
+    column-gap:12px;
+    min-height:82px;
+    padding:14px 14px;
+    border:1px solid var(--line);
+    border-radius:13px;
+    background:var(--panel);
+  }
+  .inventory-table td{
+    display:block;
+    padding:0;
+    border:0;
+    white-space:normal;
+  }
+  .inventory-table .product-cell{grid-area:product;min-width:0;}
+  .inventory-table .product-name{
+    display:block;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font-size:15px;
+    line-height:1.3;
+  }
+  .mobile-product-meta{
+    display:block;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    margin-top:4px;
+    color:var(--ink-soft);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+  }
+  .inventory-table .total-cell{
+    grid-area:total;
+    min-width:42px;
+    text-align:right!important;
+    font-size:19px;
+    font-weight:700;
+  }
+  .mobile-location{
+    display:block;
+    margin-top:3px;
+    color:var(--ink-soft);
+    font-size:10px;
+    font-weight:400;
+    white-space:nowrap;
+  }
+  .inventory-table .status-cell{grid-area:status;}
+  .inventory-table .barcode-cell,
+  .inventory-table .category-cell,
+  .inventory-table .distributor-cell,
+  .inventory-table .floor-cell,
+  .inventory-table .backroom-cell,
+  .inventory-table .cases-cell{display:none;}
+  .inventory-table .badge{white-space:nowrap;}
+  .inventory-table .inventory-empty{
+    display:block;
+    border:1px solid var(--line);
+    border-radius:13px;
+    background:var(--panel);
+  }
+}
+
+@media(max-width:430px){
+  .inventory-filters{grid-template-columns:1fr;}
+  .inventory-filters .search-bar{grid-column:auto;}
+  .inventory-table tr.inventory-row{
+    grid-template-columns:minmax(0,1fr) 38px auto;
+    padding:13px 12px;
+    column-gap:9px;
+  }
+  .inventory-table .product-name{font-size:14px;}
+  .inventory-table .badge{font-size:9.5px;padding:5px 8px;}
+}

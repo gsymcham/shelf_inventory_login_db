@@ -11,7 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="css/styles.css">
 </head>
-<body class="auth-loading">
+<body>
 
   <div class="auth-overlay" id="authOverlay">
     <div class="auth-card">
@@ -20,10 +20,6 @@
       <div class="auth-tabs">
         <button class="btn btn-ink" id="authSignInTab" type="button">Sign in</button>
         <button class="btn btn-line" id="authSignUpTab" type="button">Create account</button>
-      </div>
-      <div class="field auth-name" id="authNameWrap">
-        <label>Full name</label>
-        <input type="text" id="authName" autocomplete="name" placeholder="Enter your full name">
       </div>
       <div class="field">
         <label>Email</label>
@@ -178,42 +174,6 @@
       </div>
     </section>
 
-
-    <!-- MY PROFILE VIEW -->
-    <section class="view" id="view-profile">
-      <div class="profile-grid">
-        <div class="profile-card">
-          <h2>My Profile</h2>
-          <p>Update the name shown in Shelf2. Your email address is tied to your login account.</p>
-          <div class="field">
-            <label for="profileName">Full name</label>
-            <input type="text" id="profileName" autocomplete="name" placeholder="Enter your full name">
-          </div>
-          <div class="field">
-            <label for="profileEmail">Email</label>
-            <input type="email" id="profileEmail" readonly>
-          </div>
-          <div class="profile-message" id="profileMessage" role="status" aria-live="polite"></div>
-          <button class="btn btn-ink" id="profileSaveName" type="button">Save name</button>
-        </div>
-
-        <div class="profile-card">
-          <h2>Change Password</h2>
-          <p>Choose a new password with at least 6 characters.</p>
-          <div class="field">
-            <label for="profileNewPassword">New password</label>
-            <input type="password" id="profileNewPassword" autocomplete="new-password" placeholder="At least 6 characters">
-          </div>
-          <div class="field">
-            <label for="profileConfirmPassword">Confirm new password</label>
-            <input type="password" id="profileConfirmPassword" autocomplete="new-password" placeholder="Enter the new password again">
-          </div>
-          <div class="profile-message" id="passwordMessage" role="status" aria-live="polite"></div>
-          <button class="btn btn-amber" id="profileChangePassword" type="button">Change password</button>
-        </div>
-      </div>
-    </section>
-
     <section class="view admin-only" id="view-admin">
       <div class="dashboard-grid">
         <div class="metric-card"><div class="metric-value" id="dashProducts">0</div><div class="metric-label">Products</div></div>
@@ -252,10 +212,7 @@
       <details class="admin-card collapse-card">
         <summary>Users &amp; roles</summary>
         <div class="collapse-body">
-          <p>Manage users, edit names, and change Staff/Admin roles. Your own role is protected.</p>
-          <div class="user-toolbar">
-            <input id="adminUserSearch" type="search" placeholder="Search users by name or email…" autocomplete="off">
-          </div>
+          <p>Manage access, change Staff/Admin roles, disable accounts, or permanently remove users. The last active admin and your own account are protected.</p>
           <div class="user-list" id="adminUserList"><div class="small-note">Loading users…</div></div>
         </div>
       </details>
@@ -328,7 +285,6 @@
       <button class="navbtn" data-view="inventory"><span class="ic">▦</span>Inventory</button>
       <button class="navbtn" data-view="export"><span class="ic">⇩</span>Export</button>
       <button class="navbtn admin-only" data-view="admin"><span class="ic">⚙</span>Admin</button>
-      <button class="navbtn" data-view="profile"><span class="ic">👤</span>Profile</button>
     </div>
   </nav>
 

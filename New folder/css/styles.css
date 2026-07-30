@@ -839,29 +839,3 @@
 .inventory-sort-button.active .sort-indicator::after{content:'▲';opacity:1;}
 th[aria-sort='descending'] .inventory-sort-button.active .sort-indicator::after{content:'▼';}
 @media(max-width:1199px){.inventory-sort-button{pointer-events:none;}}
-
-
-/* V9.5 authentication and user management */
-body.auth-loading #app,
-body.auth-loading #authOverlay{visibility:hidden}
-body:not(.authenticated) #app{display:none}
-body.authenticated #authOverlay{display:none}
-.auth-name{display:none}
-.auth-name.visible{display:block}
-.user-toolbar{margin:12px 0}
-.user-toolbar input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#fff}
-.user-identity{min-width:0}
-.user-name{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.user-email-line{font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
-@media(max-width:700px){.user-name,.user-email-line{white-space:normal}}
-
-
-/* V9.6 profile */
-.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
-.profile-card{background:var(--paper,#fff);border:1px solid var(--line,#ddd5c8);border-radius:18px;padding:24px}
-.profile-card h2{margin:0 0 8px}.profile-card p{margin:0 0 20px;color:var(--muted,#666)}
-.profile-card .btn{min-width:150px}.profile-message{min-height:22px;margin:8px 0 12px;font-size:.9rem}
-.profile-message.success{color:var(--green,#24734a)}.profile-message.error{color:var(--rust,#a33a24)}
-#profileEmail[readonly]{background:#f3f1ec;color:#6b6861}
-.user-actions{flex-wrap:wrap}.user-edit-name{white-space:nowrap}
-@media(max-width:760px){.profile-grid{grid-template-columns:1fr}.profile-card{padding:18px}}

@@ -6,19 +6,17 @@
   let inventory=[],categories=[],distributors=[],categoryRecords=[],distributorRecords=[],adminUsers=[],manageState=null,currentUser=null,userRole='staff',channel=null,currentEditId=null,pendingBarcode=null,scanMode='edit',quickProduct=null,authMode='signin',html5QrCode=null,camRunning=false,panelQrCode=null,panelCameraRunning=false,historyPage=1,historyTotal=0;
   const money=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'});
   function showAuthMessage(message,type='error'){$('authError').textContent=message;$('authError').className='auth-error'+(type==='success'?' success':type==='info'?' info':'')}
-  function setAuthMode(m){authMode=m;const s=m==='signin';$('authSignInTab').className='btn '+(s?'btn-ink':'btn-line');$('authSignUpTab').className='btn '+(!s?'btn-ink':'btn-line');$('authSubmit').textContent=s?'Sign in':'Create account';$('authNameWrap').classList.toggle('visible',!s);$('authConfirmWrap').classList.toggle('visible',!s);$('authPassword').autocomplete=s?'current-password':'new-password';$('authConfirmPassword').value='';showAuthMessage('','info')}
+  function setAuthMode(m){authMode=m;const s=m==='signin';$('authSignInTab').className='btn '+(s?'btn-ink':'btn-line');$('authSignUpTab').className='btn '+(!s?'btn-ink':'btn-line');$('authSubmit').textContent=s?'Sign in':'Create account';$('authConfirmWrap').classList.toggle('visible',!s);$('authPassword').autocomplete=s?'current-password':'new-password';$('authConfirmPassword').value='';showAuthMessage('','info')}
   $('authSignInTab').onclick=()=>setAuthMode('signin');
   $('authSignUpTab').onclick=()=>setAuthMode('signup');
-  $('authSubmit').onclick=async()=>{const name=$('authName').value.trim(),email=$('authEmail').value.trim(),password=$('authPassword').value,confirmPassword=$('authConfirmPassword').value,button=$('authSubmit');showAuthMessage('','info');if(authMode==='signup'&&!name)return showAuthMessage('Enter your full name.');if(!email||password.length<6)return showAuthMessage('Enter a valid email and a password with at least 6 characters.');if(authMode==='signup'&&password!==confirmPassword)return showAuthMessage('Passwords do not match. Please enter the same password twice.');button.disabled=true;button.textContent=authMode==='signin'?'Signing in…':'Creating account…';try{if(authMode==='signin'){const {error}=await db.auth.signInWithPassword({email,password});if(error)showAuthMessage(error.message)}else{const redirectTo=window.location.origin+window.location.pathname;const {data,error}=await db.auth.signUp({email,password,options:{emailRedirectTo:redirectTo,data:{full_name:name,name:name}}});if(error)return showAuthMessage(error.message);$('authName').value='';$('authPassword').value='';$('authConfirmPassword').value='';if(data.session){showAuthMessage('Account created successfully. You have been signed in.','success')}else{showAuthMessage(`Verification email sent to ${email}. Open the email and click the confirmation link before signing in.`,'success')}}}catch(error){showAuthMessage(error?.message||'Authentication failed. Please try again.')}finally{button.disabled=false;button.textContent=authMode==='signin'?'Sign in':'Create account'}};
+  $('authSubmit').onclick=async()=>{const email=$('authEmail').value.trim(),password=$('authPassword').value,confirmPassword=$('authConfirmPassword').value,button=$('authSubmit');showAuthMessage('','info');if(!email||password.length<6)return showAuthMessage('Enter a valid email and a password with at least 6 characters.');if(authMode==='signup'&&password!==confirmPassword)return showAuthMessage('Passwords do not match. Please enter the same password twice.');button.disabled=true;button.textContent=authMode==='signin'?'Signing in…':'Creating account…';try{if(authMode==='signin'){const {error}=await db.auth.signInWithPassword({email,password});if(error)showAuthMessage(error.message)}else{const redirectTo=window.location.origin+window.location.pathname;const {data,error}=await db.auth.signUp({email,password,options:{emailRedirectTo:redirectTo}});if(error)return showAuthMessage(error.message);$('authPassword').value='';$('authConfirmPassword').value='';if(data.session){showAuthMessage('Account created successfully. Email verification is currently not required, so you have been signed in.','success')}else{showAuthMessage(`Verification email sent to ${email}. Open the email and click the confirmation link before signing in.`,'success')}}}catch(error){showAuthMessage(error?.message||'Authentication failed. Please try again.')}finally{button.disabled=false;button.textContent=authMode==='signin'?'Sign in':'Create account'}};
   $('authPassword').addEventListener('keydown',e=>{if(e.key==='Enter')$('authSubmit').click()});
   $('authConfirmPassword').addEventListener('keydown',e=>{if(e.key==='Enter')$('authSubmit').click()});
-  $('signOutBtn').onclick=async()=>{const {error}=await db.auth.signOut();if(error){console.error('Sign-out failed:',error);toast(error.message)}};
-  let authInitialized=false;
-  async function applySession(session){currentUser=session?.user||null;document.body.classList.toggle('authenticated',!!currentUser);$('signOutBtn').style.display=currentUser?'block':'none';$('userEmail').textContent=currentUser?.email||'';if(currentUser){try{await loadRole();subscribe();await loadInventory()}catch(error){console.error('Session initialization failed:',error)}}else{inventory=[];userRole='staff';document.body.classList.remove('is-admin');sync('Offline')}document.body.classList.remove('auth-loading');authInitialized=true}
-  db.auth.onAuthStateChange((event,session)=>{if(!authInitialized||event==='SIGNED_IN'||event==='SIGNED_OUT'||event==='USER_UPDATED')applySession(session)});
-  async function initializeAuth(){try{const {data:{session},error}=await db.auth.getSession();if(error)throw error;await applySession(session)}catch(error){console.error('Unable to restore session:',error);showAuthMessage(error?.message||'Unable to restore session. Please sign in again.');await applySession(null)}}
-  initializeAuth();
-  const views={scan:$('view-scan'),inventory:$('view-inventory'),export:$('view-export'),profile:$('view-profile'),admin:$('view-admin')};
+  $('signOutBtn').onclick=()=>db.auth.signOut();
+  async function applySession(session){currentUser=session?.user||null;$('authOverlay').classList.toggle('hidden',!!currentUser);$('signOutBtn').style.display=currentUser?'block':'none';$('userEmail').textContent=currentUser?.email||'';if(currentUser){await loadRole();subscribe();await loadInventory()}else{inventory=[];userRole='staff';document.body.classList.remove('is-admin');sync('Offline')}}
+  db.auth.onAuthStateChange((e,s)=>applySession(s));
+  db.auth.getSession().then(({data})=>applySession(data.session)).catch(error=>showAuthMessage(error?.message||'Unable to restore session.'));
+  const views={scan:$('view-scan'),inventory:$('view-inventory'),export:$('view-export'),admin:$('view-admin')};
   const navBtns=[...document.querySelectorAll('.navbtn')];
   const isAdmin=()=>userRole==='admin';
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -29,14 +27,10 @@
   function fromDb(r){return{id:r.id,barcode:r.barcode,name:r.name,price:r.price==null?null:Number(r.price),cost:r.cost==null?null:Number(r.cost),category:r.category||'',distributor:r.distributor||'',floorQty:r.floor_qty||0,backroomQty:r.backroom_qty||0,backroomCases:r.backroom_cases||0,unitsPerCase:r.units_per_case||0,lowStockThreshold:r.low_stock_threshold||0,lowStockAlertEnabled:r.low_stock_alert_enabled!==false,status:r.status||'in_stock',updatedAt:new Date(r.updated_at).getTime(),updatedBy:r.updated_by}}
   const caseUnits=p=>(p.backroomCases||0)*(p.unitsPerCase||0);
   const totalUnits=p=>(p.floorQty||0)+(p.backroomQty||0)+caseUnits(p);
-  function switchView(name){if(name==='admin'&&!isAdmin())name='scan';Object.entries(views).forEach(([k,v])=>v&&v.classList.toggle('active',k===name));navBtns.forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='inventory')renderList();if(name==='export')renderStats();if(name==='admin')renderAdmin();if(name==='profile')loadMyProfile();if(name==='scan')clearScanSearch()}
+  function switchView(name){if(name==='admin'&&!isAdmin())name='scan';Object.entries(views).forEach(([k,v])=>v&&v.classList.toggle('active',k===name));navBtns.forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='inventory')renderList();if(name==='export')renderStats();if(name==='admin')renderAdmin();if(name==='scan')clearScanSearch()}
   navBtns.forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
   function applyRoleUI(){document.body.classList.toggle('is-admin',isAdmin());$('roleChip').style.display='inline-block';$('roleChip').textContent=isAdmin()?'ADMIN':'STAFF';$('addCategoryBtn').style.display=isAdmin()?'block':'none';$('addDistributorBtn').style.display=isAdmin()?'block':'none'}
   async function loadRole(){userRole='staff';if(!currentUser)return;const {data,error}=await db.from('profiles').select('role').eq('id',currentUser.id).maybeSingle();if(!error&&data?.role)userRole=data.role;applyRoleUI()}
-  function setProfileMessage(id,message,type=''){const el=$(id);if(!el)return;el.textContent=message;el.className='profile-message'+(type?' '+type:'')}
-  function loadMyProfile(){if(!currentUser)return;$('profileName').value=currentUser.user_metadata?.full_name||currentUser.user_metadata?.name||'';$('profileEmail').value=currentUser.email||'';setProfileMessage('profileMessage','');setProfileMessage('passwordMessage','')}
-  $('profileSaveName').onclick=async()=>{const name=$('profileName').value.trim(),btn=$('profileSaveName');if(!name)return setProfileMessage('profileMessage','Enter your full name.','error');btn.disabled=true;btn.textContent='Saving…';setProfileMessage('profileMessage','');const {data,error}=await db.auth.updateUser({data:{...currentUser.user_metadata,full_name:name,name:name}});btn.disabled=false;btn.textContent='Save name';if(error)return setProfileMessage('profileMessage',error.message,'error');currentUser=data.user;setProfileMessage('profileMessage','Name updated successfully.','success');if(isAdmin())await loadAdminUsers()};
-  $('profileChangePassword').onclick=async()=>{const password=$('profileNewPassword').value,confirmPassword=$('profileConfirmPassword').value,btn=$('profileChangePassword');if(password.length<6)return setProfileMessage('passwordMessage','Password must contain at least 6 characters.','error');if(password!==confirmPassword)return setProfileMessage('passwordMessage','Passwords do not match.','error');btn.disabled=true;btn.textContent='Changing…';setProfileMessage('passwordMessage','');const {error}=await db.auth.updateUser({password});btn.disabled=false;btn.textContent='Change password';if(error)return setProfileMessage('passwordMessage',error.message,'error');$('profileNewPassword').value='';$('profileConfirmPassword').value='';setProfileMessage('passwordMessage','Password changed successfully.','success')};
   function fillSelect(id,vals,selected,label){const el=$(id);if(!el)return;const clean=[...new Set((vals||[]).filter(Boolean))].sort((a,b)=>a.localeCompare(b));el.innerHTML=`<option value="">${esc(label)}</option>`+clean.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(selected&&!clean.includes(selected))el.insertAdjacentHTML('beforeend',`<option value="${esc(selected)}">${esc(selected)}</option>`);el.value=selected||''}
   async function loadLists(){
     const [a,b,c,d]=await Promise.all([
@@ -371,60 +365,64 @@
     $('manageConfirm').disabled=true;const {error}=await db.rpc('manage_reference_value',params);$('manageConfirm').disabled=false;
     if(error){toast(error.message);return}closeManage();await loadInventory();toast(`${kind==='category'?'Category':'Distributor'} updated`);
   };
-  function renderAdminUsers(){
+  async function loadAdminUsers(){
+    const {data,error}=await db.rpc('admin_list_users');
     const el=$('adminUserList');
-    const query=($('adminUserSearch')?.value||'').trim().toLowerCase();
-    const shown=adminUsers.filter(u=>`${u.full_name||u.name||''} ${u.email||''}`.toLowerCase().includes(query));
+    if(error){el.innerHTML=`<div class="small-note">User management is not installed yet. Run the V6 Supabase SQL upgrade.<br>${esc(error.message)}</div>`;return}
+    adminUsers=data||[];
     const activeAdmins=adminUsers.filter(u=>u.role==='admin'&&u.is_active).length;
-    el.innerHTML=shown.length?shown.map(u=>{
-      const self=u.id===currentUser.id,lastAdmin=u.role==='admin'&&u.is_active&&activeAdmins<=1,protectedUser=self||lastAdmin;
-      const displayName=u.full_name||u.name||u.user_metadata?.full_name||'Name not provided';
+    el.innerHTML=adminUsers.length?adminUsers.map(u=>{
+      const self=u.id===currentUser.id, lastAdmin=u.role==='admin'&&u.is_active&&activeAdmins<=1;
+      const protectedUser=self||lastAdmin;
       return `<div class="user-row" data-user-id="${u.id}">
-        <div class="user-identity"><div class="user-name">${esc(displayName)}</div><div class="user-email-line">${esc(u.email||'Unknown email')}</div><div class="user-meta">Joined ${u.created_at?new Date(u.created_at).toLocaleDateString():'—'}${self?' · You':''}</div></div>
-        <select class="user-role-select" data-original-role="${esc(u.role||'staff')}" ${protectedUser?'disabled':''}><option value="staff" ${u.role==='staff'?'selected':''}>Staff</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>
+        <div class="user-email-cell">${esc(u.email||'Unknown user')}<div class="user-meta">Joined ${u.created_at?new Date(u.created_at).toLocaleDateString():'—'}${self?' · You':''}</div></div>
+        <select class="user-role-select" ${protectedUser?'disabled':''}><option value="staff" ${u.role==='staff'?'selected':''}>Staff</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>
         <div class="user-status ${u.is_active?'active':'disabled'}">${u.is_active?'Active':'Disabled'}</div>
-        <div class="user-actions"><button class="mini-btn user-edit-name">Edit name</button><button class="mini-btn user-toggle" ${protectedUser?'disabled':''}>${u.is_active?'Disable':'Enable'}</button><button class="mini-btn user-remove" ${protectedUser?'disabled':''}>Remove</button></div>
-      </div>`}).join(''):'<div class="small-note">No matching users found.</div>';
-    el.querySelectorAll('.user-edit-name').forEach(btn=>btn.onclick=async()=>{
-      const id=btn.closest('.user-row').dataset.userId,u=adminUsers.find(x=>x.id===id);if(!u)return;
-      const existing=u.full_name||u.name||'';const name=prompt(`Enter the full name for ${u.email||'this user'}:`,existing==='Name not provided'?'':existing);
-      if(name===null)return;const clean=name.trim();if(!clean)return toast('Name cannot be empty');
-      btn.disabled=true;const {error}=await db.rpc('admin_set_user_name',{p_user_id:id,p_full_name:clean});btn.disabled=false;
-      if(error){toast(error.message);return}toast('Name updated');await loadAdminUsers();
-    });
+        <div class="user-actions"><button class="mini-btn user-toggle" ${protectedUser?'disabled':''}>${u.is_active?'Disable':'Enable'}</button><button class="mini-btn user-remove" ${protectedUser?'disabled':''}>Remove</button></div>
+      </div>`}).join(''):'<div class="small-note">No users found.</div>';
     el.querySelectorAll('.user-role-select').forEach(sel=>sel.onchange=async()=>{
-      const row=sel.closest('.user-row'),id=row.dataset.userId,u=adminUsers.find(x=>x.id===id),oldRole=sel.dataset.originalRole,newRole=sel.value;
-      if(!u||oldRole===newRole)return;
-      const label=u.full_name||u.name||u.email||'this user';
-      if(!confirm(`Change ${label}'s role from ${oldRole} to ${newRole}?`)){sel.value=oldRole;return}
-      sel.disabled=true;
-      const {error}=await db.rpc('admin_set_user_role',{p_user_id:id,p_role:newRole});
-      if(error){toast(error.message);sel.value=oldRole;sel.disabled=false;return}
-      toast('Role updated');await loadAdminUsers();
+      const id=sel.closest('.user-row').dataset.userId;
+      const {error}=await db.rpc('admin_set_user_role',{p_user_id:id,p_role:sel.value});
+      if(error){toast(error.message);await loadAdminUsers();return}toast('Role updated');await loadAdminUsers();
     });
     el.querySelectorAll('.user-toggle').forEach(btn=>btn.onclick=async()=>{
-      const row=btn.closest('.user-row'),id=row.dataset.userId,u=adminUsers.find(x=>x.id===id);if(!u)return;
-      const label=u.full_name||u.name||u.email||'this user';
-      if(!confirm(`${u.is_active?'Disable':'Enable'} ${label}?`))return;
+      const row=btn.closest('.user-row'),id=row.dataset.userId,u=adminUsers.find(x=>x.id===id);
+      if(!u)return;if(!confirm(`${u.is_active?'Disable':'Enable'} ${u.email}?`))return;
       const {error}=await db.rpc('admin_set_user_active',{p_user_id:id,p_active:!u.is_active});
       if(error){toast(error.message);return}toast(u.is_active?'User disabled':'User enabled');await loadAdminUsers();
     });
     el.querySelectorAll('.user-remove').forEach(btn=>btn.onclick=async()=>{
       const id=btn.closest('.user-row').dataset.userId,u=adminUsers.find(x=>x.id===id);if(!u)return;
-      const label=u.full_name||u.name||u.email||'this user';
-      if(!confirm(`Permanently remove ${label}? This cannot be undone.`))return;
+      if(!confirm(`Permanently remove ${u.email}? Their inventory history will remain.`))return;
+      const typed=prompt(`Type REMOVE to permanently delete ${u.email}`);if(typed!=='REMOVE')return;
       const {error}=await db.rpc('admin_delete_user',{p_user_id:id});
       if(error){toast(error.message);return}toast('User removed');await loadAdminUsers();
     });
   }
-  async function loadAdminUsers(){
-    const {data,error}=await db.rpc('admin_list_users');
-    const el=$('adminUserList');
-    if(error){el.innerHTML=`<div class="small-note">User management needs the included Supabase SQL update.<br>${esc(error.message)}</div>`;return}
-    adminUsers=data||[];renderAdminUsers();
+  function localDateValue(date){
+    const year=date.getFullYear(),month=String(date.getMonth()+1).padStart(2,'0'),day=String(date.getDate()).padStart(2,'0');
+    return `${year}-${month}-${day}`;
   }
-  if($('adminUserSearch'))$('adminUserSearch').addEventListener('input',renderAdminUsers);
-
+  function dateRangeDays(start,end){
+    const a=new Date(`${start}T00:00:00`),b=new Date(`${end}T00:00:00`);
+    return Math.floor((b-a)/86400000)+1;
+  }
+  function initializeHistoryDates(){
+    const today=localDateValue(new Date());
+    if(!$('historyStartDate').value)$('historyStartDate').value=today;
+    if(!$('historyEndDate').value)$('historyEndDate').value=today;
+  }
+  function validateHistoryRange(){
+    initializeHistoryDates();
+    const start=$('historyStartDate').value,end=$('historyEndDate').value,days=dateRangeDays(start,end);
+    if(!start||!end)return {valid:false,message:'Choose both dates.'};
+    if(days<1)return {valid:false,message:'End date must be on or after the start date.'};
+    if(days>93)return {valid:false,message:'Choose a date range of no more than 3 months.'};
+    const allOption=$('historyPageSizeAll');
+    allOption.disabled=days>5;
+    if(days>5&&$('historyPageSize').value==='all')$('historyPageSize').value='50';
+    return {valid:true,start,end,days};
+  }
   async function loadHistory(){
     if(!isAdmin())return;
     const range=validateHistoryRange();

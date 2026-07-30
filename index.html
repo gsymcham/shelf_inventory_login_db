@@ -10,7 +10,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="css/styles.css">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
 </head>
 <body>
 
@@ -64,10 +63,19 @@
       </div>
       <div class="mode-help" id="modeHelp">Scan to open and edit a product.</div>
       <div class="scan-card">
-        <h2>Scan a barcode</h2>
-        <p>Use a Bluetooth/USB barcode scanner — it types the code and hits enter automatically, just like a keyboard. Tap the box below first.</p>
-        <input type="text" class="gun-input" id="gunInput" placeholder="Waiting for scan…" autocomplete="off" autocorrect="off" autocapitalize="off">
-        <p class="hint">No scanner handy? Type the code and press enter, or use the camera below.</p>
+        <div class="scanner-ready" id="scannerReady" role="status" aria-live="polite">
+          <span class="scanner-ready-dot" aria-hidden="true"></span>
+          <div>
+            <h2>Scanner ready</h2>
+            <p>Scan a barcode anywhere on this screen. No field selection is required.</p>
+          </div>
+        </div>
+
+        <div class="product-search-block">
+          <label for="scanProductSearch">Search product name or barcode</label>
+          <input type="search" id="scanProductSearch" placeholder="Start typing a name or barcode" autocomplete="off">
+          <div class="scan-search-results" id="scanSearchResults"></div>
+        </div>
 
         <div class="cam-toggle">
           <span>Use phone camera instead</span>
@@ -81,8 +89,28 @@
       <div class="quick-adjust" id="quickAdjust">
         <h3 id="quickProductName">Product</h3>
         <div class="product-line mono" id="quickProductMeta"></div>
-        <div class="field"><label>Quantity to adjust</label><input type="number" id="quickQty" min="1" value="1" inputmode="numeric"></div>
-        <div class="field"><label>Location</label><select id="quickLocation"><option value="floor">Floor</option><option value="backroom">Back room — open</option><option value="cases">Unopened cases</option></select></div>
+
+        <div class="field">
+          <label for="quickLocation">Location</label>
+          <select id="quickLocation">
+            <option value="floor">On floor</option>
+            <option value="backroom">Back room — open</option>
+            <option value="cases">Unopened cases</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label id="quickQtyLabel" for="quickQty">Quantity to adjust</label>
+          <div class="quantity-stepper quick-adjust-stepper">
+            <button class="quantity-button" type="button" id="quickQtyMinus" aria-label="Decrease quantity">−</button>
+            <input type="number" id="quickQty" min="1" step="1" value="1" inputmode="numeric">
+            <button class="quantity-button" type="button" id="quickQtyPlus" aria-label="Increase quantity">+</button>
+          </div>
+        </div>
+
+        <div class="quick-adjust-summary" id="quickAdjustSummary"></div>
+        <div class="quick-adjust-error" id="quickAdjustError" role="alert"></div>
+
         <div class="quick-grid"><button class="btn btn-line" id="quickCancel">Cancel</button><button class="btn btn-amber" id="quickApply">Apply</button></div>
       </div>
     </section>

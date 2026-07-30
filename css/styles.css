@@ -697,3 +697,20 @@
   .history-date-group .btn{width:100%;}
   .history-pagination{grid-column:1/-1;justify-content:space-between;}
 }
+
+/* Smart product search and global scanner status */
+.scanner-ready{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--paper);margin-bottom:14px}
+.scanner-ready-dot{width:10px;height:10px;flex:0 0 auto;margin-top:5px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px var(--green-bg)}
+.scanner-ready h2{margin:0 0 3px;font-size:14px}.scanner-ready p{margin:0;font-size:11.5px;color:var(--ink-soft)}
+.product-search-block{display:grid;gap:6px}.product-search-block>label{font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em}
+#scanProductSearch{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);font:inherit;font-size:14px}
+#scanProductSearch:focus{outline:3px solid rgba(232,169,58,.45);border-color:var(--amber)}
+.scan-search-results{display:grid;gap:6px;max-height:320px;overflow:auto}
+.scan-search-result{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel);text-align:left;color:var(--ink)}
+.scan-search-result:hover,.scan-search-result:focus{border-color:var(--amber);outline:none;background:#fffaf0}
+.scan-search-result span{min-width:0}.scan-search-result strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.scan-search-result small{display:block;margin-top:3px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;font-size:10.5px}
+.scan-search-result em{flex:0 0 auto;padding:3px 7px;border-radius:12px;background:var(--paper);color:var(--ink-soft);font-size:9.5px;font-style:normal;font-weight:700;text-transform:uppercase}
+.scan-search-empty{padding:10px 2px;color:var(--ink-soft);font-size:11.5px;line-height:1.45}
+.quick-adjust-summary{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font-size:12px;line-height:1.45;color:var(--ink-soft);margin-bottom:8px}
+.quick-adjust-error{min-height:17px;color:var(--rust);font-size:11.5px;margin-bottom:8px}
+.quick-adjust select{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font:inherit;color:var(--ink)}

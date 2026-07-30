@@ -303,34 +303,124 @@
           <button class="btn btn-line btn-sm" type="button" id="addDistributorBtn">+ Add</button>
         </div>
       </div>
-      <div class="field">
-        <label>On the floor</label>
-        <div class="qty-row">
-          <button id="floorMinus">−</button>
-          <input type="number" id="fieldFloorQty" value="0" inputmode="numeric">
-          <button id="floorPlus">+</button>
+      <section class="stock-editor">
+        <div class="stock-type-tabs" role="tablist" aria-label="Stock type">
+          <button
+            id="openStockTab"
+            class="stock-type-tab active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="openStockPanel"
+            data-stock-panel="open"
+          >
+            Open bottles
+          </button>
+          <button
+            id="caseStockTab"
+            class="stock-type-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="caseStockPanel"
+            data-stock-panel="cases"
+          >
+            Unopened cases
+          </button>
         </div>
-      </div>
-      <div class="field">
-        <label>Back room — open</label>
-        <div class="qty-row">
-          <button id="backMinus">−</button>
-          <input type="number" id="fieldBackQty" value="0" inputmode="numeric">
-          <button id="backPlus">+</button>
+
+        <div
+          id="openStockPanel"
+          class="stock-type-panel"
+          role="tabpanel"
+          aria-labelledby="openStockTab"
+        >
+          <div class="quantity-field">
+            <label for="fieldFloorQty">On the floor</label>
+            <div class="quantity-stepper">
+              <button
+                type="button"
+                class="quantity-button"
+                data-quantity-target="fieldFloorQty"
+                data-quantity-change="-1"
+                aria-label="Decrease floor quantity"
+              >−</button>
+              <input id="fieldFloorQty" type="number" min="0" step="1" value="0" inputmode="numeric">
+              <button
+                type="button"
+                class="quantity-button"
+                data-quantity-target="fieldFloorQty"
+                data-quantity-change="1"
+                aria-label="Increase floor quantity"
+              >+</button>
+            </div>
+          </div>
+
+          <div class="quantity-field">
+            <label for="fieldBackQty">Back room — open</label>
+            <div class="quantity-stepper">
+              <button
+                type="button"
+                class="quantity-button"
+                data-quantity-target="fieldBackQty"
+                data-quantity-change="-1"
+                aria-label="Decrease open back room quantity"
+              >−</button>
+              <input id="fieldBackQty" type="number" min="0" step="1" value="0" inputmode="numeric">
+              <button
+                type="button"
+                class="quantity-button"
+                data-quantity-target="fieldBackQty"
+                data-quantity-change="1"
+                aria-label="Increase open back room quantity"
+              >+</button>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="field">
-        <label>Back room — unopened cases</label>
-        <div class="qty-row">
-          <button id="casesMinus">−</button>
-          <input type="number" id="fieldCases" value="0" inputmode="numeric">
-          <button id="casesPlus">+</button>
+
+        <div
+          id="caseStockPanel"
+          class="stock-type-panel"
+          role="tabpanel"
+          aria-labelledby="caseStockTab"
+          hidden
+        >
+          <div class="quantity-field">
+            <label for="fieldCases">Back room — unopened cases</label>
+            <div class="quantity-stepper">
+              <button
+                type="button"
+                class="quantity-button"
+                data-quantity-target="fieldCases"
+                data-quantity-change="-1"
+                aria-label="Decrease unopened cases"
+              >−</button>
+              <input id="fieldCases" type="number" min="0" step="1" value="0" inputmode="numeric">
+              <button
+                type="button"
+                class="quantity-button"
+                data-quantity-target="fieldCases"
+                data-quantity-change="1"
+                aria-label="Increase unopened cases"
+              >+</button>
+            </div>
+          </div>
+
+          <div class="quantity-field" id="unitsPerCaseField">
+            <label for="fieldUnitsPerCase">Bottles (units) per case</label>
+            <input
+              id="fieldUnitsPerCase"
+              class="quantity-text-input"
+              type="number"
+              min="0"
+              step="1"
+              value=""
+              inputmode="numeric"
+              placeholder="e.g. 12"
+            >
+          </div>
         </div>
-      </div>
-      <div class="field" id="unitsPerCaseField">
-        <label>Bottles (units) per case</label>
-        <input type="number" id="fieldUnitsPerCase" value="" inputmode="numeric" placeholder="e.g. 12">
-      </div>
+      </section>
       <div class="toggle-row">
         <div class="toggle-copy">Low-stock alert<small>Show this product on the Admin dashboard when stock reaches the threshold.</small></div>
         <label class="switch"><input type="checkbox" id="fieldLowStockEnabled"><span></span></label>

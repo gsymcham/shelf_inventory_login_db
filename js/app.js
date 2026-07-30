@@ -57,7 +57,40 @@
   function updateTotal(){const f=+$('fieldFloorQty').value||0,b=+$('fieldBackQty').value||0,c=+$('fieldCases').value||0,u=+$('fieldUnitsPerCase').value||0;$('totalLine').textContent=`Total on hand: ${f+b+c*u} units · ${c} unopened case${c===1?'':'s'}`}
   function syncLowStockFields(){$('lowStockThresholdWrap').classList.toggle('disabled',!$('fieldLowStockEnabled').checked)}
   $('fieldLowStockEnabled').onchange=syncLowStockFields;
-  [['floorMinus','floorPlus','fieldFloorQty'],['backMinus','backPlus','fieldBackQty'],['casesMinus','casesPlus','fieldCases']].forEach(([m,p,f])=>{$(m).onclick=()=>{$(f).value=Math.max(0,(+$(f).value||0)-1);updateTotal()};$(p).onclick=()=>{$(f).value=(+$(f).value||0)+1;updateTotal()};$(f).oninput=updateTotal});$('fieldUnitsPerCase').oninput=updateTotal;
+  function initializeStockTypeTabs(){
+    const tabs=document.querySelectorAll('[data-stock-panel]');
+    const openPanel=$('openStockPanel');
+    const casePanel=$('caseStockPanel');
+    tabs.forEach(tab=>{
+      tab.addEventListener('click',()=>{
+        const showOpenStock=tab.dataset.stockPanel==='open';
+        tabs.forEach(item=>{
+          const isSelected=item===tab;
+          item.classList.toggle('active',isSelected);
+          item.setAttribute('aria-selected',String(isSelected));
+        });
+        openPanel.hidden=!showOpenStock;
+        casePanel.hidden=showOpenStock;
+      });
+    });
+  }
+  function initializeQuantityButtons(){
+    document.querySelectorAll('[data-quantity-target]').forEach(button=>{
+      button.addEventListener('click',()=>{
+        const input=$(button.dataset.quantityTarget);
+        if(!input)return;
+        const change=Number(button.dataset.quantityChange);
+        const currentValue=Number(input.value)||0;
+        input.value=Math.max(0,currentValue+change);
+        input.dispatchEvent(new Event('input',{bubbles:true}));
+      });
+    });
+    ['fieldFloorQty','fieldBackQty','fieldCases','fieldUnitsPerCase'].forEach(id=>{
+      $(id).addEventListener('input',updateTotal);
+    });
+  }
+  initializeStockTypeTabs();
+  initializeQuantityButtons();
   function closePanel(){$('panelOverlay').classList.remove('active');currentEditId=null;pendingBarcode=null}
   $('panelCancel').onclick=closePanel;$('panelOverlay').onclick=e=>{if(e.target.id==='panelOverlay')closePanel()};$('manualAddBtn').onclick=()=>openPanel(null);
   async function addList(kind,nameOverride){if(!isAdmin()){toast('Admin access required');return}const label=kind==='category'?'category':'distributor',name=(nameOverride??prompt(`Enter new ${label}:`)??'').trim();if(!name)return;const table=kind==='category'?'categories':'distributors';const {error}=await db.from(table).upsert({name,active:true,created_by:currentUser.id},{onConflict:'name'});if(error){toast(error.message);return}await loadLists();toast(`${label} added`)}

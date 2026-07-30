@@ -697,7 +697,85 @@
   .history-date-group .btn{width:100%;}
   .history-pagination{grid-column:1/-1;justify-content:space-between;}
 }
+.smart-search-wrap{
+    margin-top:14px;
+}
 
+.smart-search-label{
+    display:block;
+    margin-bottom:7px;
+    color:var(--ink);
+    font-size:13px;
+    font-weight:700;
+}
+
+.smart-search-input{
+    width:100%;
+    min-height:62px;
+    padding:15px 16px;
+    border:2px solid var(--ink);
+    border-radius:11px;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:17px;
+    letter-spacing:.01em;
+}
+
+.smart-search-input::placeholder{
+    color:#9a9891;
+}
+
+.smart-search-input:focus{
+    outline:3px solid var(--amber);
+    outline-offset:2px;
+}
+
+.smart-search-results{
+    display:none;
+    margin-top:8px;
+    overflow:hidden;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:var(--panel);
+}
+
+.smart-search-results.active{
+    display:block;
+}
+
+.smart-search-result{
+    width:100%;
+    padding:12px 14px;
+    border:0;
+    border-bottom:1px solid var(--line);
+    background:var(--panel);
+    color:var(--ink);
+    text-align:left;
+}
+
+.smart-search-result:last-child{
+    border-bottom:0;
+}
+
+.smart-search-result:hover,
+.smart-search-result:focus{
+    background:var(--paper);
+}
+
+.smart-search-result-name{
+    display:block;
+    margin-bottom:3px;
+    font-size:13px;
+    font-weight:700;
+}
+
+.smart-search-result-meta{
+    display:block;
+    color:var(--ink-soft);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+}
 /* Smart product search and global scanner status */
 .scanner-ready{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--paper);margin-bottom:14px}
 .scanner-ready-dot{width:10px;height:10px;flex:0 0 auto;margin-top:5px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px var(--green-bg)}

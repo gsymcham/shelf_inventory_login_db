@@ -71,10 +71,25 @@
           </div>
         </div>
 
-        <div class="product-search-block">
+        <!-- <div class="product-search-block">
           <label for="scanProductSearch">Search product name or barcode</label>
           <input type="search" id="scanProductSearch" placeholder="Start typing a name or barcode" autocomplete="off">
           <div class="scan-search-results" id="scanSearchResults"></div>
+        </div> -->
+
+        <div class="smart-search-wrap">
+          <input
+              id="smartProductSearch"
+              class="smart-search-input"
+              type="search"
+              autocomplete="off"
+              placeholder="Search by product name or barcode..."
+          >
+
+          <div
+              id="smartSearchResults"
+              class="smart-search-results">
+          </div>
         </div>
 
         <div class="cam-toggle">

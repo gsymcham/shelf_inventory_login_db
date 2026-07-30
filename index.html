@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
-<title>TC's Liquor — Inventory Pro</title>
+<title>Shelf — Inventory Pro</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
@@ -15,7 +15,7 @@
 
   <div class="auth-overlay" id="authOverlay">
     <div class="auth-card">
-      <h2>TC's Liquor — Inventory Pro</h2>
+      <h2>Shelf2 Inventory</h2>
       <p>Sign in to access the shared inventory. Every authorized user sees the same products and quantities.</p>
       <div class="auth-tabs">
         <button class="btn btn-ink" id="authSignInTab" type="button">Sign in</button>
@@ -42,7 +42,7 @@
 
   <header>
     <div class="brand">
-      <h1>TC's Liquor — Inventory Pro</h1>
+      <h1>Shelf2</h1>
       <span class="count mono" id="headerCount">0 items</span>
     </div>
     <div class="barcode-rule"></div>
@@ -271,8 +271,13 @@
       <div class="sub mono" id="panelBarcode">—</div>
 
       <div class="field">
-        <label>Barcode</label>
-        <input type="text" class="mono" id="fieldBarcode" placeholder="Scan or type code">
+        <label for="fieldBarcode">Barcode</label>
+        <div class="barcode-entry-row">
+          <input type="text" class="mono" id="fieldBarcode" placeholder="Scan or type code">
+          <button class="btn btn-line btn-sm" id="panelScanBarcodeBtn" type="button">Scan barcode</button>
+        </div>
+        <div class="panel-barcode-reader" id="panelBarcodeReader"></div>
+        <p class="cam-msg" id="panelBarcodeMessage"></p>
       </div>
       <div class="field">
         <label>Product name</label>
@@ -348,7 +353,7 @@
 
         <div class="low-stock-inline">
           <div class="low-stock-toggle">
-            <div class="toggle-copy"><label for="lowStockAlert"Low-stock Alert <br><small>Show on the Admin dashboard when stock reaches this quantity.</small></div>
+            <div class="toggle-copy">Low-stock alert<small>Show on the Admin dashboard when stock reaches this quantity.</small></div>
             <label class="switch"><input type="checkbox" id="fieldLowStockEnabled" checked><span></span></label>
           </div>
 

@@ -3,7 +3,7 @@
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhbHJ0a2R2ZHRrcW12a2pmdXVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwOTEyMjQsImV4cCI6MjEwMDY2NzIyNH0.5gYn9PvkMZFk922qULn4GmCQvgUnHeiES4mSEVe5q0w';
   const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   const $=id=>document.getElementById(id);
-  let inventory=[],categories=[],distributors=[],categoryRecords=[],distributorRecords=[],adminUsers=[],manageState=null,currentUser=null,userRole='staff',channel=null,currentEditId=null,pendingBarcode=null,scanMode='edit',quickProduct=null,authMode='signin',html5QrCode=null,camRunning=false;
+  let inventory=[],categories=[],distributors=[],categoryRecords=[],distributorRecords=[],adminUsers=[],manageState=null,currentUser=null,userRole='staff',channel=null,currentEditId=null,pendingBarcode=null,scanMode='edit',quickProduct=null,authMode='signin',html5QrCode=null,camRunning=false,panelQrCode=null,panelCameraRunning=false,historyPage=1,historyTotal=0;
   const money=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'});
   function showAuthMessage(message,type='error'){$('authError').textContent=message;$('authError').className='auth-error'+(type==='success'?' success':type==='info'?' info':'')}
   function setAuthMode(m){authMode=m;const s=m==='signin';$('authSignInTab').className='btn '+(s?'btn-ink':'btn-line');$('authSignUpTab').className='btn '+(!s?'btn-ink':'btn-line');$('authSubmit').textContent=s?'Sign in':'Create account';$('authConfirmWrap').classList.toggle('visible',!s);$('authPassword').autocomplete=s?'current-password':'new-password';$('authConfirmPassword').value='';showAuthMessage('','info')}
@@ -82,7 +82,34 @@
     });
   }
   initializeQuantityButtons();
-  function closePanel(){$('panelOverlay').classList.remove('active');currentEditId=null;pendingBarcode=null}
+  async function closePanel(){await stopPanelBarcodeScanner();$('panelOverlay').classList.remove('active');currentEditId=null;pendingBarcode=null}
+  async function startPanelBarcodeScanner(){
+    const reader=$('panelBarcodeReader'),message=$('panelBarcodeMessage'),button=$('panelScanBarcodeBtn');
+    message.style.display='none';message.textContent='';
+    if(panelCameraRunning){await stopPanelBarcodeScanner();return;}
+    if(typeof Html5Qrcode==='undefined'){message.style.display='block';message.textContent='Barcode camera library did not load.';return;}
+    reader.classList.add('active');
+    panelQrCode=new Html5Qrcode('panelBarcodeReader');
+    try{
+      await panelQrCode.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:140}},async decoded=>{
+        $('fieldBarcode').value=normalizeBarcode(decoded);
+        $('panelBarcode').textContent=$('fieldBarcode').value||'New item';
+        await stopPanelBarcodeScanner();
+        runLookup($('fieldBarcode').value);
+      },()=>{});
+      panelCameraRunning=true;button.textContent='Stop scanner';
+    }catch(error){
+      reader.classList.remove('active');panelQrCode=null;panelCameraRunning=false;button.textContent='Scan barcode';
+      message.style.display='block';message.textContent='Camera unavailable. Type or scan the barcode using the main scanner.';
+    }
+  }
+  async function stopPanelBarcodeScanner(){
+    const reader=$('panelBarcodeReader'),button=$('panelScanBarcodeBtn');
+    try{if(panelQrCode&&panelCameraRunning)await panelQrCode.stop();}catch(_error){}
+    try{if(panelQrCode)panelQrCode.clear();}catch(_error){}
+    panelQrCode=null;panelCameraRunning=false;reader.classList.remove('active');reader.innerHTML='';button.textContent='Scan barcode';
+  }
+  $('panelScanBarcodeBtn').onclick=startPanelBarcodeScanner;
   $('panelCancel').onclick=closePanel;$('panelOverlay').onclick=e=>{if(e.target.id==='panelOverlay')closePanel()};$('manualAddBtn').onclick=()=>openPanel(null);
   async function addList(kind,nameOverride){if(!isAdmin()){toast('Admin access required');return}const label=kind==='category'?'category':'distributor',name=(nameOverride??prompt(`Enter new ${label}:`)??'').trim();if(!name)return;const table=kind==='category'?'categories':'distributors';const {error}=await db.from(table).upsert({name,active:true,created_by:currentUser.id},{onConflict:'name'});if(error){toast(error.message);return}await loadLists();toast(`${label} added`)}
   $('addCategoryBtn').onclick=()=>addList('category');$('addDistributorBtn').onclick=()=>addList('distributor');
@@ -204,7 +231,61 @@
       if(error){toast(error.message);return}toast('User removed');await loadAdminUsers();
     });
   }
-  async function renderAdmin(){if(!isAdmin())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');await loadAdminUsers();const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));renderReports();const {data}=await db.from('inventory_history').select('*').order('changed_at',{ascending:false}).limit(100);$('historyRows').innerHTML=(data||[]).map(h=>`<tr><td>${new Date(h.changed_at).toLocaleString()}</td><td>${esc(h.product_name||h.barcode)}</td><td>${esc(h.action)}</td><td>${h.quantity_change>0?'+':''}${h.quantity_change} ${esc(h.location||'')}</td><td>${esc(h.changed_by_email||'User')}</td></tr>`).join('')||'<tr><td colspan="5">No history yet.</td></tr>'}
+  function localDateValue(date){
+    const year=date.getFullYear(),month=String(date.getMonth()+1).padStart(2,'0'),day=String(date.getDate()).padStart(2,'0');
+    return `${year}-${month}-${day}`;
+  }
+  function dateRangeDays(start,end){
+    const a=new Date(`${start}T00:00:00`),b=new Date(`${end}T00:00:00`);
+    return Math.floor((b-a)/86400000)+1;
+  }
+  function initializeHistoryDates(){
+    const today=localDateValue(new Date());
+    if(!$('historyStartDate').value)$('historyStartDate').value=today;
+    if(!$('historyEndDate').value)$('historyEndDate').value=today;
+  }
+  function validateHistoryRange(){
+    initializeHistoryDates();
+    const start=$('historyStartDate').value,end=$('historyEndDate').value,days=dateRangeDays(start,end);
+    if(!start||!end)return {valid:false,message:'Choose both dates.'};
+    if(days<1)return {valid:false,message:'End date must be on or after the start date.'};
+    if(days>93)return {valid:false,message:'Choose a date range of no more than 3 months.'};
+    const allOption=$('historyPageSizeAll');
+    allOption.disabled=days>5;
+    if(days>5&&$('historyPageSize').value==='all')$('historyPageSize').value='50';
+    return {valid:true,start,end,days};
+  }
+  async function loadHistory(){
+    if(!isAdmin())return;
+    const range=validateHistoryRange();
+    if(!range.valid){$('historyFilterMessage').textContent=range.message;return;}
+    const pageValue=$('historyPageSize').value;
+    const pageSize=pageValue==='all'?null:Number(pageValue);
+    const startIso=new Date(`${range.start}T00:00:00`).toISOString();
+    const endDate=new Date(`${range.end}T00:00:00`);endDate.setDate(endDate.getDate()+1);
+    const endIso=endDate.toISOString();
+    let countQuery=db.from('inventory_history').select('id',{count:'exact',head:true}).gte('changed_at',startIso).lt('changed_at',endIso);
+    const {count,error:countError}=await countQuery;
+    if(countError){$('historyFilterMessage').textContent=countError.message;return;}
+    historyTotal=count||0;
+    const totalPages=pageSize?Math.max(1,Math.ceil(historyTotal/pageSize)):1;
+    historyPage=Math.min(Math.max(1,historyPage),totalPages);
+    let query=db.from('inventory_history').select('*').gte('changed_at',startIso).lt('changed_at',endIso).order('changed_at',{ascending:false});
+    if(pageSize){const from=(historyPage-1)*pageSize;query=query.range(from,from+pageSize-1);}
+    const {data,error}=await query;
+    if(error){$('historyFilterMessage').textContent=error.message;return;}
+    $('historyRows').innerHTML=(data||[]).map(h=>`<tr><td>${new Date(h.changed_at).toLocaleString()}</td><td>${esc(h.product_name||h.barcode)}</td><td>${esc(h.action)}</td><td>${h.quantity_change>0?'+':''}${h.quantity_change} ${esc(h.location||'')}</td><td>${esc(h.changed_by_email||'User')}</td></tr>`).join('')||'<tr><td colspan="5">No history found for this date range.</td></tr>';
+    $('historyPageInfo').textContent=pageSize?`Page ${historyPage} of ${totalPages}`:`${historyTotal} rows`;
+    $('historyPreviousButton').disabled=!pageSize||historyPage<=1;
+    $('historyNextButton').disabled=!pageSize||historyPage>=totalPages;
+    $('historyFilterMessage').textContent=`${historyTotal} record${historyTotal===1?'':'s'} · ${range.days} day${range.days===1?'':'s'}`+(range.days>5?' · “All” is available for ranges up to 5 days.':'');
+  }
+  $('historyApplyDateButton').onclick=()=>{historyPage=1;loadHistory()};
+  $('historyTodayButton').onclick=()=>{const today=localDateValue(new Date());$('historyStartDate').value=today;$('historyEndDate').value=today;historyPage=1;loadHistory()};
+  $('historyPageSize').onchange=()=>{historyPage=1;loadHistory()};
+  $('historyPreviousButton').onclick=()=>{if(historyPage>1){historyPage--;loadHistory()}};
+  $('historyNextButton').onclick=()=>{historyPage++;loadHistory()};
+  async function renderAdmin(){if(!isAdmin())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');await loadAdminUsers();const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));renderReports();initializeHistoryDates();await loadHistory()}
   function renderReports(){const cat=$('reportCategory').value,dist=$('reportDistributor').value,filtered=inventory.filter(p=>(!cat||p.category===cat)&&(!dist||p.distributor===dist)),groups={};filtered.forEach(p=>{const k=p.category||'Uncategorized';(groups[k]??=[]).push(p)});$('reportRows').innerHTML=Object.entries(groups).sort().map(([k,v])=>{const s=stats(v);return`<tr><td>${esc(k)}</td><td>${s.products}</td><td>${s.units}</td><td>${money.format(s.retail)}</td><td>${money.format(s.cost)}</td></tr>`}).join('')||'<tr><td colspan="5">No report data.</td></tr>'}
   $('reportCategory').onchange=renderReports;$('reportDistributor').onchange=renderReports;
   $('adminAddCategory').onclick=async()=>{await addList('category',$('adminCategoryName').value);$('adminCategoryName').value='';if(isAdmin())renderAdmin()};$('adminAddDistributor').onclick=async()=>{await addList('distributor',$('adminDistributorName').value);$('adminDistributorName').value='';if(isAdmin())renderAdmin()};

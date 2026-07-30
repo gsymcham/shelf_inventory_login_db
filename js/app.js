@@ -27,7 +27,7 @@
   function fromDb(r){return{id:r.id,barcode:r.barcode,name:r.name,price:r.price==null?null:Number(r.price),cost:r.cost==null?null:Number(r.cost),category:r.category||'',distributor:r.distributor||'',floorQty:r.floor_qty||0,backroomQty:r.backroom_qty||0,backroomCases:r.backroom_cases||0,unitsPerCase:r.units_per_case||0,lowStockThreshold:r.low_stock_threshold||0,lowStockAlertEnabled:r.low_stock_alert_enabled!==false,status:r.status||'in_stock',updatedAt:new Date(r.updated_at).getTime(),updatedBy:r.updated_by}}
   const caseUnits=p=>(p.backroomCases||0)*(p.unitsPerCase||0);
   const totalUnits=p=>(p.floorQty||0)+(p.backroomQty||0)+caseUnits(p);
-  function switchView(name){if(name==='admin'&&!isAdmin())name='scan';Object.entries(views).forEach(([k,v])=>v&&v.classList.toggle('active',k===name));navBtns.forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='inventory')renderList();if(name==='export')renderStats();if(name==='admin')renderAdmin();if(name==='scan')setTimeout(()=>$('gunInput').focus(),100)}
+  function switchView(name){if(name==='admin'&&!isAdmin())name='scan';Object.entries(views).forEach(([k,v])=>v&&v.classList.toggle('active',k===name));navBtns.forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='inventory')renderList();if(name==='export')renderStats();if(name==='admin')renderAdmin();if(name==='scan')clearScanSearch()}
   navBtns.forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
   function applyRoleUI(){document.body.classList.toggle('is-admin',isAdmin());$('roleChip').style.display='inline-block';$('roleChip').textContent=isAdmin()?'ADMIN':'STAFF';$('addCategoryBtn').style.display=isAdmin()?'block':'none';$('addDistributorBtn').style.display=isAdmin()?'block':'none'}
   async function loadRole(){userRole='staff';if(!currentUser)return;const {data,error}=await db.from('profiles').select('role').eq('id',currentUser.id).maybeSingle();if(!error&&data?.role)userRole=data.role;applyRoleUI()}
@@ -56,10 +56,140 @@
   async function lookupCatalog(code){const exact=normalizeBarcode(code);let {data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').eq('barcode',exact).maybeSingle();if(error)throw error;if(!data){const stripped=exact.replace(/^0+/,'');if(stripped!==exact){({data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').eq('barcode',stripped).maybeSingle());if(error)throw error}}return data}
   function setMode(mode){scanMode=mode;document.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));$('modeHelp').textContent=mode==='edit'?'Scan to open and edit a product.':mode==='receive'?'Scan an existing product and add received units.':'Scan an existing product and remove sold, damaged, or transferred units.';$('quickAdjust').classList.remove('active');quickProduct=null}
   document.querySelectorAll('.mode-btn').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
-  async function handleScan(raw){const code=normalizeBarcode(raw);if(!code)return;let p=findProduct(code);if(!p){const {data,error}=await db.from('inventory').select('*').eq('barcode',code).maybeSingle();if(!error&&data)p=fromDb(data)}if(scanMode!=='edit'){if(!p){toast('Product must be added before quantity adjustment');pendingBarcode=code;openPanel(null,true);return}quickProduct=p;$('quickProductName').textContent=p.name;$('quickProductMeta').textContent=`${p.barcode} · ${totalUnits(p)} units on hand`;$('quickQty').value=1;$('quickAdjust').classList.add('active');return}if(p){openPanel(p);return}pendingBarcode=code;openPanel(null,true)}
-  $('gunInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const c=e.target.value;e.target.value='';handleScan(c)}});
-  $('quickCancel').addEventListener('click',()=>{$('quickAdjust').classList.remove('active');quickProduct=null});
-  $('quickApply').addEventListener('click',async()=>{if(!quickProduct)return;const qty=Math.max(1,parseInt($('quickQty').value||1)),loc=$('quickLocation').value,sign=scanMode==='receive'?1:-1;let updates={};if(loc==='floor')updates.floor_qty=Math.max(0,quickProduct.floorQty+sign*qty);if(loc==='backroom')updates.backroom_qty=Math.max(0,quickProduct.backroomQty+sign*qty);if(loc==='cases')updates.backroom_cases=Math.max(0,quickProduct.backroomCases+sign*qty);updates.status=((updates.floor_qty??quickProduct.floorQty)+(updates.backroom_qty??quickProduct.backroomQty)+((updates.backroom_cases??quickProduct.backroomCases)*quickProduct.unitsPerCase)>0)?'in_stock':'out_of_stock';updates.updated_by=currentUser.id;updates.updated_at=new Date().toISOString();const {error}=await db.from('inventory').update(updates).eq('id',quickProduct.id);if(error){toast(error.message);return}await db.from('inventory_history').insert({inventory_id:quickProduct.id,barcode:quickProduct.barcode,product_name:quickProduct.name,action:scanMode,location:loc,quantity_change:sign*qty,changed_by:currentUser.id});toast(`${scanMode==='receive'?'Added':'Removed'} ${qty}`);$('quickAdjust').classList.remove('active');quickProduct=null;await loadInventory()});
+  function clearScanSearch(){
+    const input=$('scanProductSearch'),results=$('scanSearchResults');
+    if(input)input.value='';
+    if(results)results.innerHTML='';
+  }
+  function openQuickAdjust(p){
+    quickProduct=p;
+    $('quickProductName').textContent=p.name;
+    $('quickProductMeta').textContent=`${p.barcode} · ${totalUnits(p)} units on hand · ${p.backroomCases} unopened case${p.backroomCases===1?'':'s'}`;
+    $('quickQty').value=1;
+    $('quickLocation').value='floor';
+    $('quickAdjustError').textContent='';
+    updateQuickAdjustSummary();
+    $('quickAdjust').classList.add('active');
+    $('quickAdjust').scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+  async function handleScan(raw){
+    const code=normalizeBarcode(raw);
+    if(!code)return;
+    clearScanSearch();
+    let p=findProduct(code);
+    if(!p){
+      const {data,error}=await db.from('inventory').select('*').eq('barcode',code).maybeSingle();
+      if(!error&&data)p=fromDb(data);
+    }
+    if(scanMode!=='edit'){
+      if(!p){toast('Add this product to inventory before receiving or removing stock');pendingBarcode=code;openPanel(null,true);return;}
+      openQuickAdjust(p);return;
+    }
+    if(p){openPanel(p);return;}
+    pendingBarcode=code;openPanel(null,true);
+  }
+  function updateQuickAdjustSummary(){
+    if(!quickProduct)return;
+    const qty=Math.max(1,parseInt($('quickQty').value||1,10));
+    const loc=$('quickLocation').value;
+    const isCases=loc==='cases';
+    const unitsPerCase=quickProduct.unitsPerCase||0;
+    const available=loc==='floor'?quickProduct.floorQty:loc==='backroom'?quickProduct.backroomQty:quickProduct.backroomCases;
+    $('quickQtyLabel').textContent=isCases?(scanMode==='receive'?'Cases to receive':'Cases to remove'):(scanMode==='receive'?'Units to receive':'Units to remove');
+    $('quickApply').textContent=scanMode==='receive'?'Receive':'Remove';
+    $('quickAdjustError').textContent='';
+    if(isCases){
+      $('quickAdjustSummary').textContent=unitsPerCase>0?`${qty} case${qty===1?'':'s'} × ${unitsPerCase} bottles = ${qty*unitsPerCase} bottles. Available: ${available} case${available===1?'':'s'}.`:'Bottles per case is missing. Edit the product before adjusting unopened cases.';
+    }else{
+      const label=loc==='floor'?'on floor':'open back room';
+      $('quickAdjustSummary').textContent=`${scanMode==='receive'?'+':'−'}${qty} bottle${qty===1?'':'s'} ${label}. Available: ${available}.`;
+    }
+  }
+  $('quickLocation').addEventListener('change',updateQuickAdjustSummary);
+  $('quickQty').addEventListener('input',updateQuickAdjustSummary);
+  $('quickQtyMinus').addEventListener('click',()=>{$('quickQty').value=Math.max(1,(parseInt($('quickQty').value||1,10)-1));updateQuickAdjustSummary()});
+  $('quickQtyPlus').addEventListener('click',()=>{$('quickQty').value=Math.max(1,(parseInt($('quickQty').value||1,10)+1));updateQuickAdjustSummary()});
+  $('quickCancel').addEventListener('click',()=>{$('quickAdjust').classList.remove('active');quickProduct=null;clearScanSearch()});
+  $('quickApply').addEventListener('click',async()=>{
+    if(!quickProduct)return;
+    const qty=Math.max(1,parseInt($('quickQty').value||1,10)),loc=$('quickLocation').value,sign=scanMode==='receive'?1:-1;
+    const available=loc==='floor'?quickProduct.floorQty:loc==='backroom'?quickProduct.backroomQty:quickProduct.backroomCases;
+    if(loc==='cases'&&!(quickProduct.unitsPerCase>0)){$('quickAdjustError').textContent='Bottles per case is required before unopened cases can be adjusted.';return;}
+    if(sign<0&&qty>available){$('quickAdjustError').textContent=`Cannot remove ${qty}. Only ${available} ${loc==='cases'?'case(s)':'unit(s)'} are available at this location.`;return;}
+    const updates={};
+    if(loc==='floor')updates.floor_qty=quickProduct.floorQty+sign*qty;
+    if(loc==='backroom')updates.backroom_qty=quickProduct.backroomQty+sign*qty;
+    if(loc==='cases')updates.backroom_cases=quickProduct.backroomCases+sign*qty;
+    updates.status=((updates.floor_qty??quickProduct.floorQty)+(updates.backroom_qty??quickProduct.backroomQty)+((updates.backroom_cases??quickProduct.backroomCases)*quickProduct.unitsPerCase)>0)?'in_stock':'out_of_stock';
+    updates.updated_by=currentUser.id;updates.updated_at=new Date().toISOString();
+    const {error}=await db.from('inventory').update(updates).eq('id',quickProduct.id);
+    if(error){$('quickAdjustError').textContent=error.message;return;}
+    const bottleChange=loc==='cases'?sign*qty*quickProduct.unitsPerCase:sign*qty;
+    await db.from('inventory_history').insert({inventory_id:quickProduct.id,barcode:quickProduct.barcode,product_name:quickProduct.name,action:scanMode,location:loc,quantity_change:bottleChange,changed_by:currentUser.id});
+    toast(`${scanMode==='receive'?'Received':'Removed'} ${qty} ${loc==='cases'?'case(s)':'unit(s)'}`);
+    $('quickAdjust').classList.remove('active');quickProduct=null;clearScanSearch();await loadInventory();
+  });
+
+  let searchTimer=null,searchSequence=0;
+  async function searchCatalogAndInventory(term){
+    const q=term.trim();
+    const results=$('scanSearchResults');
+    if(q.length<2){results.innerHTML='';return;}
+    const sequence=++searchSequence;
+    const lower=q.toLowerCase();
+    const live=inventory.filter(p=>[p.name,p.barcode,p.category,p.distributor].some(v=>String(v||'').toLowerCase().includes(lower))).slice(0,8);
+    let catalog=[];
+    try{
+      const safe=q.replace(/[%_,()]/g,' ');
+      const {data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').or(`product_name.ilike.%${safe}%,barcode.ilike.%${safe}%`).limit(12);
+      if(!error)catalog=data||[];
+    }catch(_error){}
+    if(sequence!==searchSequence)return;
+    const liveCodes=new Set(live.map(p=>normalizeBarcode(p.barcode)));
+    const catalogOnly=catalog.filter(c=>!liveCodes.has(normalizeBarcode(c.barcode))).slice(0,8);
+    const items=[...live.map(p=>({type:'inventory',barcode:p.barcode,name:p.name,category:p.category,product:p})),...catalogOnly.map(c=>({type:'catalog',barcode:c.barcode,name:c.product_name,category:c.category,catalog:c}))].slice(0,12);
+    results.innerHTML=items.length?items.map((item,index)=>`<button type="button" class="scan-search-result" data-search-index="${index}"><span><strong>${esc(item.name||'Unnamed product')}</strong><small>${esc(item.barcode)}${item.category?' · '+esc(item.category):''}</small></span><em>${item.type==='inventory'?'In inventory':'Catalog'}</em></button>`).join(''):`<div class="scan-search-empty">No matching product. Press Enter to add “${esc(q)}” manually.</div>`;
+    results.querySelectorAll('[data-search-index]').forEach(button=>button.onclick=()=>selectSearchResult(items[Number(button.dataset.searchIndex)]));
+  }
+  function selectSearchResult(item){
+    clearScanSearch();
+    if(item.type==='inventory'){
+      if(scanMode==='edit')openPanel(item.product);else openQuickAdjust(item.product);
+      return;
+    }
+    if(scanMode!=='edit'){toast('This catalog product must be added to inventory first');}
+    const c=item.catalog;
+    pendingBarcode=normalizeBarcode(c.barcode);
+    openPanel(null,false);
+    $('fieldName').value=c.product_name||'';$('fieldPrice').value=c.price??'';$('fieldCost').value=c.cost??'';
+    fillSelect('fieldCategory',categories,c.category||'','Uncategorized');fillSelect('fieldDistributor',distributors,c.distributor||'','Not assigned');
+    $('lookupStatus').textContent='Loaded from imported catalog';$('lookupStatus').classList.add('found');
+  }
+  $('scanProductSearch').addEventListener('input',e=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>searchCatalogAndInventory(e.target.value),180)});
+  $('scanProductSearch').addEventListener('keydown',e=>{
+    if(e.key!=='Enter')return;e.preventDefault();
+    const first=$('scanSearchResults').querySelector('[data-search-index]');
+    if(first){first.click();return;}
+    const value=e.currentTarget.value.trim();if(!value)return;
+    if(/^\d{6,}$/.test(value))handleScan(value);else{pendingBarcode='';openPanel(null,false);$('fieldName').value=value;clearScanSearch();}
+  });
+
+  let scannerBuffer='',scannerLastKey=0,scannerResetTimer=null;
+  document.addEventListener('keydown',event=>{
+    if(!currentUser||!views.scan.classList.contains('active'))return;
+    if($('panelOverlay').classList.contains('active')||$('quickAdjust').classList.contains('active'))return;
+    const target=event.target;
+    if(target&&(['INPUT','TEXTAREA','SELECT'].includes(target.tagName)||target.isContentEditable))return;
+    const now=Date.now();
+    if(now-scannerLastKey>120)scannerBuffer='';
+    scannerLastKey=now;
+    if(event.key==='Enter'){
+      const code=scannerBuffer;scannerBuffer='';clearTimeout(scannerResetTimer);
+      if(code.length>=6){event.preventDefault();handleScan(code)}
+      return;
+    }
+    if(event.key.length===1){scannerBuffer+=event.key;clearTimeout(scannerResetTimer);scannerResetTimer=setTimeout(()=>scannerBuffer='',180)}
+  });
   let lookupSeq=0;
   function openPanel(p,auto=false){currentEditId=p?.id||null;$('panelTitle').textContent=p?'Edit product':'Add product';$('panelBarcode').textContent=p?.barcode||'New item';$('fieldBarcode').value=p?.barcode||pendingBarcode||'';$('fieldName').value=p?.name||'';$('fieldPrice').value=p?.price??'';$('fieldCost').value=p?.cost??'';fillSelect('fieldCategory',categories,p?.category||'','Uncategorized');fillSelect('fieldDistributor',distributors,p?.distributor||'','Not assigned');$('fieldFloorQty').value=p?.floorQty??0;$('fieldBackQty').value=p?.backroomQty??0;$('fieldCases').value=p?.backroomCases??0;$('fieldUnitsPerCase').value=p?.unitsPerCase??0;$('fieldLowStockEnabled').checked=p?p.lowStockAlertEnabled:true;$('fieldLowStock').value=p?p.lowStockThreshold:1;syncLowStockFields();$('panelDelete').style.display=p&&isAdmin()?'block':'none';$('panelOverlay').classList.add('active');$('lookupStatus').textContent='';updateTotal();if(auto)runLookup($('fieldBarcode').value)}
   async function runLookup(code){const seq=++lookupSeq;$('lookupStatus').textContent='Looking up imported catalog…';try{const d=await lookupCatalog(code);if(seq!==lookupSeq||currentEditId)return;if(d){$('fieldName').value=d.product_name||'';$('fieldPrice').value=d.price??'';$('fieldCost').value=d.cost??'';fillSelect('fieldCategory',categories,d.category||'','Uncategorized');fillSelect('fieldDistributor',distributors,d.distributor||'','Not assigned');$('lookupStatus').textContent='Found in imported catalog';$('lookupStatus').classList.add('found')}else $('lookupStatus').textContent='No catalog match — enter details manually'}catch(e){$('lookupStatus').textContent=`Catalog error: ${e.message}`}}

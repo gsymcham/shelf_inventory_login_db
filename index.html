@@ -142,15 +142,15 @@
         <table class="inventory-table">
           <thead>
             <tr>
-              <th>Product</th>
-              <th>Barcode</th>
-              <th>Category</th>
-              <th>Distributor</th>
-              <th class="number-column">Floor</th>
-              <th class="number-column">Backroom</th>
-              <th class="number-column">Cases</th>
-              <th class="number-column">Total</th>
-              <th>Status</th>
+              <th aria-sort="none"><button class="inventory-sort-button" type="button" data-inventory-sort="name">Product<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="inventory-sort-button" type="button" data-inventory-sort="barcode">Barcode<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="inventory-sort-button" type="button" data-inventory-sort="category">Category<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="inventory-sort-button" type="button" data-inventory-sort="distributor">Distributor<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th class="number-column" aria-sort="none"><button class="inventory-sort-button number-column" type="button" data-inventory-sort="floorQty">Floor<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th class="number-column" aria-sort="none"><button class="inventory-sort-button number-column" type="button" data-inventory-sort="backroomQty">Backroom<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th class="number-column" aria-sort="none"><button class="inventory-sort-button number-column" type="button" data-inventory-sort="backroomCases">Cases<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th class="number-column" aria-sort="none"><button class="inventory-sort-button number-column" type="button" data-inventory-sort="total">Total<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="inventory-sort-button" type="button" data-inventory-sort="status">Status<span class="sort-indicator" aria-hidden="true"></span></button></th>
             </tr>
           </thead>
           <tbody id="inventoryRows"></tbody>
@@ -386,10 +386,9 @@
 
         <div class="total-line" id="totalLine">Total on hand: 0 units · 0 cases</div>
 
-        <div class="quantity-field low-stock-inline">
+        <div class="low-stock-inline">
           <div class="low-stock-toggle">
-            <label for="lowStockAlert">Low-stock alert</label>
-            <div class="toggle-copy"><br><small>Show on the Admin dashboard when stock reaches this quantity.</small></div>
+            <div class="toggle-copy">Low-stock alert<small>Show on the Admin dashboard when stock reaches this quantity.</small></div>
             <label class="switch"><input type="checkbox" id="fieldLowStockEnabled" checked><span></span></label>
           </div>
 

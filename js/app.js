@@ -243,8 +243,45 @@
   $('panelCancel').onclick=closePanel;$('panelOverlay').onclick=e=>{if(e.target.id==='panelOverlay')closePanel()};$('manualAddBtn').onclick=()=>openPanel(null);
   async function addList(kind,nameOverride){if(!isAdmin()){toast('Admin access required');return}const label=kind==='category'?'category':'distributor',name=(nameOverride??prompt(`Enter new ${label}:`)??'').trim();if(!name)return;const table=kind==='category'?'categories':'distributors';const {error}=await db.from(table).upsert({name,active:true,created_by:currentUser.id},{onConflict:'name'});if(error){toast(error.message);return}await loadLists();toast(`${label} added`)}
   $('addCategoryBtn').onclick=()=>addList('category');$('addDistributorBtn').onclick=()=>addList('distributor');
-  $('panelSave').onclick=async()=>{const product={barcode:normalizeBarcode($('fieldBarcode').value),name:$('fieldName').value.trim(),price:$('fieldPrice').value===''?null:Math.max(0,+$('fieldPrice').value),cost:$('fieldCost').value===''?null:Math.max(0,+$('fieldCost').value),category:$('fieldCategory').value||null,distributor:$('fieldDistributor').value||null,floor_qty:Math.max(0,+$('fieldFloorQty').value||0),backroom_qty:Math.max(0,+$('fieldBackQty').value||0),backroom_cases:Math.max(0,+$('fieldCases').value||0),units_per_case:Math.max(0,+$('fieldUnitsPerCase').value||0),low_stock_threshold:Math.max(0,+$('fieldLowStock').value||0),low_stock_alert_enabled:$('fieldLowStockEnabled').checked,status:((Math.max(0,+$('fieldFloorQty').value||0)+Math.max(0,+$('fieldBackQty').value||0)+(Math.max(0,+$('fieldCases').value||0)*Math.max(0,+$('fieldUnitsPerCase').value||0)))>0?'in_stock':'out_of_stock'),updated_by:currentUser.id,updated_at:new Date().toISOString()};if(!product.barcode||!product.name){toast('Barcode and product name are required');return}let error;if(currentEditId){({error}=await db.from('inventory').update(product).eq('id',currentEditId));if(!error)await db.from('inventory_history').insert({inventory_id:currentEditId,barcode:product.barcode,product_name:product.name,action:'edit',location:'all',quantity_change:0,changed_by:currentUser.id})}else{const r=await db.from('inventory').insert(product).select('id').single();error=r.error;if(!error)await db.from('inventory_history').insert({inventory_id:r.data.id,barcode:product.barcode,product_name:product.name,action:'create',location:'all',quantity_change:product.floor_qty+product.backroom_qty+product.backroom_cases*product.units_per_case,changed_by:currentUser.id})}if(error){toast(error.message);return}closePanel();toast('Saved');await loadInventory()};
+  $('panelSave').onclick=async()=>{const product={barcode:normalizeBarcode($('fieldBarcode').value),name:$('fieldName').value.trim(),price:$('fieldPrice').value===''?null:Math.max(0,+$('fieldPrice').value),cost:$('fieldCost').value===''?null:Math.max(0,+$('fieldCost').value),category:$('fieldCategory').value||null,distributor:$('fieldDistributor').value||null,floor_qty:Math.max(0,+$('fieldFloorQty').value||0),backroom_qty:Math.max(0,+$('fieldBackQty').value||0),backroom_cases:Math.max(0,+$('fieldCases').value||0),units_per_case:Math.max(0,+$('fieldUnitsPerCase').value||0),low_stock_threshold:Math.max(0,+$('fieldLowStock').value||0),low_stock_alert_enabled:$('fieldLowStockEnabled').checked,status:((Math.max(0,+$('fieldFloorQty').value||0)+Math.max(0,+$('fieldBackQty').value||0)+(Math.max(0,+$('fieldCases').value||0)*Math.max(0,+$('fieldUnitsPerCase').value||0)))>0?'in_stock':'out_of_stock'),updated_by:currentUser.id,updated_at:new Date().toISOString()};if(!product.barcode||!product.name){toast('Barcode and product name are required');return}if(product.backroom_cases>0&&product.units_per_case<=0){toast('Bottles per case is required when unopened cases are entered');$('fieldUnitsPerCase').focus();return}let error;if(currentEditId){({error}=await db.from('inventory').update(product).eq('id',currentEditId));if(!error)await db.from('inventory_history').insert({inventory_id:currentEditId,barcode:product.barcode,product_name:product.name,action:'edit',location:'all',quantity_change:0,changed_by:currentUser.id})}else{const r=await db.from('inventory').insert(product).select('id').single();error=r.error;if(!error)await db.from('inventory_history').insert({inventory_id:r.data.id,barcode:product.barcode,product_name:product.name,action:'create',location:'all',quantity_change:product.floor_qty+product.backroom_qty+product.backroom_cases*product.units_per_case,changed_by:currentUser.id})}if(error){toast(error.message);return}closePanel();toast('Saved');await loadInventory()};
   $('panelDelete').onclick=async()=>{if(!isAdmin()||!currentEditId)return;const p=inventory.find(x=>x.id===currentEditId);const {error}=await db.from('inventory').delete().eq('id',currentEditId);if(error){toast(error.message);return}await db.from('inventory_history').insert({inventory_id:null,barcode:p.barcode,product_name:p.name,action:'delete',location:'all',quantity_change:-totalUnits(p),changed_by:currentUser.id});closePanel();await loadInventory()};
+  let inventorySortKey='name';
+  let inventorySortDirection='asc';
+
+  function inventorySortValue(product,key){
+    if(key==='total')return totalUnits(product);
+    if(key==='status')return totalUnits(product)<=0?'out_of_stock':'in_stock';
+    return product[key]??'';
+  }
+
+  function compareInventoryProducts(a,b){
+    const aValue=inventorySortValue(a,inventorySortKey);
+    const bValue=inventorySortValue(b,inventorySortKey);
+    let result;
+    if(typeof aValue==='number'&&typeof bValue==='number')result=aValue-bValue;
+    else result=String(aValue).localeCompare(String(bValue),undefined,{numeric:true,sensitivity:'base'});
+    if(result===0)result=String(a.name||'').localeCompare(String(b.name||''),undefined,{numeric:true,sensitivity:'base'});
+    return inventorySortDirection==='asc'?result:-result;
+  }
+
+  function updateInventorySortHeaders(){
+    document.querySelectorAll('[data-inventory-sort]').forEach(button=>{
+      const active=button.dataset.inventorySort===inventorySortKey;
+      button.classList.toggle('active',active);
+      const th=button.closest('th');
+      if(th)th.setAttribute('aria-sort',active?(inventorySortDirection==='asc'?'ascending':'descending'):'none');
+    });
+  }
+
+  document.querySelectorAll('[data-inventory-sort]').forEach(button=>{
+    button.addEventListener('click',()=>{
+      const key=button.dataset.inventorySort;
+      if(inventorySortKey===key)inventorySortDirection=inventorySortDirection==='asc'?'desc':'asc';
+      else{inventorySortKey=key;inventorySortDirection='asc';}
+      renderList();
+    });
+  });
+
   $('searchInput').oninput=renderList;
   $('inventoryCategoryFilter').onchange=renderList;
   $('inventoryStatusFilter').onchange=renderList;
@@ -265,8 +302,9 @@
       const actualStatus=totalUnits(p)<=0?'out_of_stock':'in_stock';
       const matchesStatus=!status||actualStatus===status;
       return matchesSearch&&matchesCategory&&matchesStatus;
-    });
+    }).sort(compareInventoryProducts);
 
+    updateInventorySortHeaders();
     $('inventoryResultCount').textContent=`${rows.length} of ${inventory.length} product${inventory.length===1?'':'s'}`;
     $('inventoryRows').innerHTML=rows.length?rows.map(p=>{
       const total=totalUnits(p);

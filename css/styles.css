@@ -812,3 +812,30 @@
   font-size:11.5px;
   line-height:1.45;
 }
+
+
+/* Sortable inventory table headers */
+.inventory-sort-button{
+  width:100%;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  font-weight:inherit;
+  letter-spacing:inherit;
+  text-transform:inherit;
+  text-align:left;
+  cursor:pointer;
+}
+.inventory-sort-button.number-column{justify-content:flex-end;}
+.inventory-sort-button:hover,
+.inventory-sort-button:focus-visible{color:var(--ink);}
+.inventory-sort-button:focus-visible{outline:2px solid var(--amber);outline-offset:4px;border-radius:3px;}
+.sort-indicator::after{content:'↕';opacity:.38;font-size:11px;}
+.inventory-sort-button.active .sort-indicator::after{content:'▲';opacity:1;}
+th[aria-sort='descending'] .inventory-sort-button.active .sort-indicator::after{content:'▼';}
+@media(max-width:1199px){.inventory-sort-button{pointer-events:none;}}

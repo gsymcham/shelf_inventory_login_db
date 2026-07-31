@@ -285,6 +285,25 @@
                 <label for="historyEndDate">End date</label>
                 <input id="historyEndDate" type="date">
               </div>
+              <div class="history-field history-filter-compact">
+                <label for="historyUserFilter">User</label>
+                <select id="historyUserFilter"><option value="">All users</option></select>
+              </div>
+              <div class="history-field history-filter-compact">
+                <label for="historyActionFilter">Action</label>
+                <select id="historyActionFilter">
+                  <option value="">All actions</option>
+                  <option value="create">Create</option>
+                  <option value="receive">Receive</option>
+                  <option value="edit">Edit</option>
+                  <option value="remove">Remove</option>
+                  <option value="delete">Delete</option>
+                </select>
+              </div>
+              <div class="history-field history-product-filter">
+                <label for="historyProductFilter">Product</label>
+                <input id="historyProductFilter" type="search" placeholder="Name or barcode">
+              </div>
               <button class="btn btn-ink btn-sm" id="historyApplyDateButton" type="button">Apply</button>
               <button class="btn btn-line btn-sm" id="historyTodayButton" type="button">Today</button>
             </div>
@@ -312,7 +331,7 @@
           <div class="scroll-table">
             <table class="data-table">
               <thead>
-                <tr><th>When</th><th>Product</th><th>Action</th><th>Change</th><th>User</th></tr>
+                <tr><th>When</th><th>Product</th><th>Action</th><th>Details</th><th>User</th></tr>
               </thead>
               <tbody id="historyRows"></tbody>
             </table>

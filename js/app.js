@@ -131,7 +131,7 @@
     const {error}=await db.from('inventory').update(updates).eq('id',quickProduct.id);
     if(error){$('quickAdjustError').textContent=error.message;return;}
     const bottleChange=loc==='cases'?sign*qty*quickProduct.unitsPerCase:sign*qty;
-    await db.from('inventory_history').insert({inventory_id:quickProduct.id,barcode:quickProduct.barcode,product_name:quickProduct.name,action:scanMode,location:loc,quantity_change:bottleChange,changed_by:currentUser.id});
+    await writeHistory({inventory_id:quickProduct.id,barcode:quickProduct.barcode,product_name:quickProduct.name,action:scanMode,location:loc,quantity_change:bottleChange,changed_by:currentUser.id,details:loc==='cases'?`${scanMode==='receive'?'Received':'Removed'} ${qty} case${qty===1?'':'s'} (${Math.abs(bottleChange)} bottles)`: `${historyLocationLabel(loc)} ${signed(sign*qty)}`});
     toast(`${scanMode==='receive'?'Received':'Removed'} ${qty} ${loc==='cases'?'case(s)':'unit(s)'}`);
     $('quickAdjust').classList.remove('active');quickProduct=null;clearScanSearch();await loadInventory();
   });
@@ -249,8 +249,67 @@
   $('panelCancel').onclick=closePanel;$('panelOverlay').onclick=e=>{if(e.target.id==='panelOverlay')closePanel()};$('manualAddBtn').onclick=()=>openPanel(null);
   async function addList(kind,nameOverride){if(!isAdmin()){toast('Admin access required');return}const label=kind==='category'?'category':'distributor',name=(nameOverride??prompt(`Enter new ${label}:`)??'').trim();if(!name)return;const table=kind==='category'?'categories':'distributors';const {error}=await db.from(table).upsert({name,active:true,created_by:currentUser.id},{onConflict:'name'});if(error){toast(error.message);return}await loadLists();toast(`${label} added`)}
   $('addCategoryBtn').onclick=()=>addList('category');$('addDistributorBtn').onclick=()=>addList('distributor');
-  $('panelSave').onclick=async()=>{const product={barcode:normalizeBarcode($('fieldBarcode').value),name:$('fieldName').value.trim(),price:$('fieldPrice').value===''?null:Math.max(0,+$('fieldPrice').value),cost:$('fieldCost').value===''?null:Math.max(0,+$('fieldCost').value),category:$('fieldCategory').value||null,distributor:$('fieldDistributor').value||null,floor_qty:Math.max(0,+$('fieldFloorQty').value||0),backroom_qty:Math.max(0,+$('fieldBackQty').value||0),backroom_cases:Math.max(0,+$('fieldCases').value||0),units_per_case:Math.max(0,+$('fieldUnitsPerCase').value||0),low_stock_threshold:Math.max(0,+$('fieldLowStock').value||0),low_stock_alert_enabled:$('fieldLowStockEnabled').checked,status:((Math.max(0,+$('fieldFloorQty').value||0)+Math.max(0,+$('fieldBackQty').value||0)+(Math.max(0,+$('fieldCases').value||0)*Math.max(0,+$('fieldUnitsPerCase').value||0)))>0?'in_stock':'out_of_stock'),updated_by:currentUser.id,updated_at:new Date().toISOString()};if(!product.barcode||!product.name){toast('Barcode and product name are required');return}if(product.backroom_cases>0&&product.units_per_case<=0){toast('Bottles per case is required when unopened cases are entered');$('fieldUnitsPerCase').focus();return}let error;if(currentEditId){({error}=await db.from('inventory').update(product).eq('id',currentEditId));if(!error)await db.from('inventory_history').insert({inventory_id:currentEditId,barcode:product.barcode,product_name:product.name,action:'edit',location:'all',quantity_change:0,changed_by:currentUser.id})}else{const r=await db.from('inventory').insert(product).select('id').single();error=r.error;if(!error)await db.from('inventory_history').insert({inventory_id:r.data.id,barcode:product.barcode,product_name:product.name,action:'create',location:'all',quantity_change:product.floor_qty+product.backroom_qty+product.backroom_cases*product.units_per_case,changed_by:currentUser.id})}if(error){toast(error.message);return}closePanel();toast('Saved');await loadInventory()};
-  $('panelDelete').onclick=async()=>{if(!isAdmin()||!currentEditId)return;const p=inventory.find(x=>x.id===currentEditId);const {error}=await db.from('inventory').delete().eq('id',currentEditId);if(error){toast(error.message);return}await db.from('inventory_history').insert({inventory_id:null,barcode:p.barcode,product_name:p.name,action:'delete',location:'all',quantity_change:-totalUnits(p),changed_by:currentUser.id});closePanel();await loadInventory()};
+  function signed(value){return `${value>0?'+':''}${value}`}
+  function historyLocationLabel(location){return location==='floor'?'Floor':location==='backroom'?'Back room (open)':location==='cases'?'Unopened cases':location||'Inventory'}
+  function buildEditDetails(oldProduct,newProduct){
+    if(!oldProduct)return 'Product updated';
+    const parts=[];
+    const changes=[
+      ['Floor',oldProduct.floorQty,newProduct.floor_qty],
+      ['Back room',oldProduct.backroomQty,newProduct.backroom_qty],
+      ['Cases',oldProduct.backroomCases,newProduct.backroom_cases],
+      ['Bottles/case',oldProduct.unitsPerCase,newProduct.units_per_case]
+    ];
+    changes.forEach(([label,before,after])=>{if(Number(before)!==Number(after))parts.push(`${label} ${before}→${after}`)});
+    const textChanges=[
+      ['Name',oldProduct.name,newProduct.name],
+      ['Barcode',oldProduct.barcode,newProduct.barcode],
+      ['Category',oldProduct.category||'Uncategorized',newProduct.category||'Uncategorized'],
+      ['Distributor',oldProduct.distributor||'None',newProduct.distributor||'None']
+    ];
+    textChanges.forEach(([label,before,after])=>{if(String(before)!==String(after))parts.push(`${label}: ${before} → ${after}`)});
+    if(Number(oldProduct.price??0)!==Number(newProduct.price??0))parts.push(`Price ${money.format(oldProduct.price||0)}→${money.format(newProduct.price||0)}`);
+    if(Number(oldProduct.cost??0)!==Number(newProduct.cost??0))parts.push(`Cost ${money.format(oldProduct.cost||0)}→${money.format(newProduct.cost||0)}`);
+    if(Boolean(oldProduct.lowStockAlertEnabled)!==Boolean(newProduct.low_stock_alert_enabled))parts.push(`Low-stock alert ${newProduct.low_stock_alert_enabled?'enabled':'disabled'}`);
+    if(Number(oldProduct.lowStockThreshold)!==Number(newProduct.low_stock_threshold))parts.push(`Threshold ${oldProduct.lowStockThreshold}→${newProduct.low_stock_threshold}`);
+    return parts.join(' • ')||'Product saved with no field changes';
+  }
+  async function writeHistory(entry){
+    const payload={...entry,details:entry.details||null};
+    let {error}=await db.from('inventory_history').insert(payload);
+    if(error&&/details.*does not exist|column .*details/i.test(error.message||'')){
+      const {details,...legacy}=payload;
+      ({error}=await db.from('inventory_history').insert(legacy));
+    }
+    if(error)console.error('Unable to write inventory history:',error);
+  }
+  function currentHistoryUser(){
+    const meta=currentUser?.user_metadata||{};
+    return {name:meta.full_name||meta.name||'',email:currentUser?.email||''};
+  }
+  $('panelSave').onclick=async()=>{
+    const product={barcode:normalizeBarcode($('fieldBarcode').value),name:$('fieldName').value.trim(),price:$('fieldPrice').value===''?null:Math.max(0,+$('fieldPrice').value),cost:$('fieldCost').value===''?null:Math.max(0,+$('fieldCost').value),category:$('fieldCategory').value||null,distributor:$('fieldDistributor').value||null,floor_qty:Math.max(0,+$('fieldFloorQty').value||0),backroom_qty:Math.max(0,+$('fieldBackQty').value||0),backroom_cases:Math.max(0,+$('fieldCases').value||0),units_per_case:Math.max(0,+$('fieldUnitsPerCase').value||0),low_stock_threshold:Math.max(0,+$('fieldLowStock').value||0),low_stock_alert_enabled:$('fieldLowStockEnabled').checked,status:((Math.max(0,+$('fieldFloorQty').value||0)+Math.max(0,+$('fieldBackQty').value||0)+(Math.max(0,+$('fieldCases').value||0)*Math.max(0,+$('fieldUnitsPerCase').value||0)))>0?'in_stock':'out_of_stock'),updated_by:currentUser.id,updated_at:new Date().toISOString()};
+    if(!product.barcode||!product.name){toast('Barcode and product name are required');return}
+    if(product.backroom_cases>0&&product.units_per_case<=0){toast('Bottles per case is required when unopened cases are entered');$('fieldUnitsPerCase').focus();return}
+    let error;
+    if(currentEditId){
+      const oldProduct=inventory.find(x=>x.id===currentEditId);
+      ({error}=await db.from('inventory').update(product).eq('id',currentEditId));
+      if(!error)await writeHistory({inventory_id:currentEditId,barcode:product.barcode,product_name:product.name,action:'edit',location:'all',quantity_change:(product.floor_qty+(product.backroom_qty)+(product.backroom_cases*product.units_per_case))-(oldProduct?totalUnits(oldProduct):0),changed_by:currentUser.id,details:buildEditDetails(oldProduct,product)});
+    }else{
+      const r=await db.from('inventory').insert(product).select('id').single();error=r.error;
+      if(!error){
+        const createdParts=['Product created'];
+        if(product.floor_qty)createdParts.push(`Floor ${product.floor_qty}`);
+        if(product.backroom_qty)createdParts.push(`Back room ${product.backroom_qty}`);
+        if(product.backroom_cases)createdParts.push(`Cases ${product.backroom_cases} × ${product.units_per_case}`);
+        await writeHistory({inventory_id:r.data.id,barcode:product.barcode,product_name:product.name,action:'create',location:'all',quantity_change:product.floor_qty+product.backroom_qty+product.backroom_cases*product.units_per_case,changed_by:currentUser.id,details:createdParts.join(' • ')});
+      }
+    }
+    if(error){toast(error.message);return}
+    closePanel();toast('Saved');await loadInventory();
+  };
+  $('panelDelete').onclick=async()=>{if(!isAdmin()||!currentEditId)return;const p=inventory.find(x=>x.id===currentEditId);const {error}=await db.from('inventory').delete().eq('id',currentEditId);if(error){toast(error.message);return}await writeHistory({inventory_id:null,barcode:p.barcode,product_name:p.name,action:'delete',location:'all',quantity_change:-totalUnits(p),changed_by:currentUser.id,details:`Product deleted • ${totalUnits(p)} bottle${totalUnits(p)===1?'':'s'} removed`});closePanel();await loadInventory()};
   let inventorySortKey='name';
   let inventorySortDirection='asc';
 
@@ -417,13 +476,110 @@
       if(error){toast(error.message);return}toast('User removed');await loadAdminUsers();
     });
   }
+  function syncHistoryUserFilter(){
+    const select=$('historyUserFilter');
+    if(!select)return;
+    const selected=select.value;
+    select.innerHTML='<option value="">All users</option>'+adminUsers.map(u=>`<option value="${esc(u.id)}">${esc((u.full_name||u.name||'Name not provided')+' — '+(u.email||''))}</option>`).join('');
+    if([...select.options].some(option=>option.value===selected))select.value=selected;
+  }
+  function historyUserDisplay(row){
+    const match=adminUsers.find(u=>u.id===row.changed_by)||adminUsers.find(u=>(u.email||'').toLowerCase()===(row.changed_by_email||'').toLowerCase());
+    const self=row.changed_by===currentUser?.id;
+    const meta=currentUser?.user_metadata||{};
+    const name=match?.full_name||match?.name||(self?(meta.full_name||meta.name):'')||'Name not provided';
+    const email=match?.email||row.changed_by_email||(self?currentUser?.email:'')||'Unknown email';
+    return `<div class="history-user"><strong>${esc(name)}</strong><small>${esc(email)}</small></div>`;
+  }
+  function fallbackHistoryDetails(row){
+    if(row.details)return row.details;
+    const change=Number(row.quantity_change)||0;
+    if(row.action==='create')return `Product created${change?` • ${Math.abs(change)} bottle${Math.abs(change)===1?'':'s'} on hand`:''}`;
+    if(row.action==='delete')return `Product deleted${change?` • ${Math.abs(change)} bottle${Math.abs(change)===1?'':'s'} removed`:''}`;
+    if(row.action==='receive'||row.action==='remove')return `${historyLocationLabel(row.location)} ${signed(change)}`;
+    if(change)return `Total inventory ${signed(change)}`;
+    return 'Legacy entry — detailed field changes were not recorded';
+  }
   async function loadAdminUsers(){
     const {data,error}=await db.rpc('admin_list_users');
     const el=$('adminUserList');
     if(error){el.innerHTML=`<div class="small-note">User management needs the included Supabase SQL update.<br>${esc(error.message)}</div>`;return}
-    adminUsers=data||[];renderAdminUsers();
+    adminUsers=data||[];renderAdminUsers();syncHistoryUserFilter();
   }
   if($('adminUserSearch'))$('adminUserSearch').addEventListener('input',renderAdminUsers);
+
+  function localDateValue(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function parseLocalDate(value) {
+    if (!value) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return new Date(year, month - 1, day);
+  }
+
+  function historyInclusiveDays(startValue, endValue) {
+    const start = parseLocalDate(startValue);
+    const end = parseLocalDate(endValue);
+    if (!start || !end) return 0;
+    const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+    const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+    return Math.floor((endUtc - startUtc) / 86400000) + 1;
+  }
+
+  function updateHistoryAllOption() {
+    const startValue = $('historyStartDate')?.value;
+    const endValue = $('historyEndDate')?.value;
+    const pageSize = $('historyPageSize');
+    const allOption = $('historyPageSizeAll');
+    if (!pageSize || !allOption) return;
+    const days = historyInclusiveDays(startValue, endValue);
+    const allowed = days > 0 && days <= 5;
+    allOption.disabled = !allowed;
+    allOption.textContent = allowed ? 'All' : 'All (up to 5 days)';
+    if (!allowed && pageSize.value === 'all') pageSize.value = '50';
+  }
+
+  function initializeHistoryDates(forceToday = false) {
+    const startInput = $('historyStartDate');
+    const endInput = $('historyEndDate');
+    if (!startInput || !endInput) return;
+    const today = localDateValue();
+    const earliest = new Date();
+    earliest.setMonth(earliest.getMonth() - 3);
+    const earliestValue = localDateValue(earliest);
+    startInput.min = earliestValue;
+    startInput.max = today;
+    endInput.min = earliestValue;
+    endInput.max = today;
+    if (forceToday || !startInput.value || !endInput.value) {
+      startInput.value = today;
+      endInput.value = today;
+    }
+    updateHistoryAllOption();
+  }
+
+  function validateHistoryRange() {
+    const start = $('historyStartDate')?.value || '';
+    const end = $('historyEndDate')?.value || '';
+    if (!start || !end) return {valid:false,message:'Select both a start date and an end date.'};
+    const startDate = parseLocalDate(start);
+    const endDate = parseLocalDate(end);
+    if (!startDate || !endDate) return {valid:false,message:'Select valid dates.'};
+    if (startDate > endDate) return {valid:false,message:'The start date cannot be after the end date.'};
+    const today = parseLocalDate(localDateValue());
+    if (endDate > today) return {valid:false,message:'The end date cannot be in the future.'};
+    const earliest = new Date(today);
+    earliest.setMonth(earliest.getMonth() - 3);
+    if (startDate < earliest) return {valid:false,message:'The selected date range cannot exceed the last 3 months.'};
+    const days = historyInclusiveDays(start, end);
+    updateHistoryAllOption();
+    return {valid:true,start,end,days};
+  }
 
   async function loadHistory(){
     if(!isAdmin())return;
@@ -434,17 +590,27 @@
     const startIso=new Date(`${range.start}T00:00:00`).toISOString();
     const endDate=new Date(`${range.end}T00:00:00`);endDate.setDate(endDate.getDate()+1);
     const endIso=endDate.toISOString();
-    let countQuery=db.from('inventory_history').select('id',{count:'exact',head:true}).gte('changed_at',startIso).lt('changed_at',endIso);
+    const userId=$('historyUserFilter')?.value||'';
+    const action=$('historyActionFilter')?.value||'';
+    const productQuery=($('historyProductFilter')?.value||'').trim().replace(/[%_,()]/g,' ');
+    function applyHistoryFilters(query){
+      query=query.gte('changed_at',startIso).lt('changed_at',endIso);
+      if(userId)query=query.eq('changed_by',userId);
+      if(action)query=query.eq('action',action);
+      if(productQuery)query=query.or(`product_name.ilike.%${productQuery}%,barcode.ilike.%${productQuery}%`);
+      return query;
+    }
+    let countQuery=applyHistoryFilters(db.from('inventory_history').select('id',{count:'exact',head:true}));
     const {count,error:countError}=await countQuery;
     if(countError){$('historyFilterMessage').textContent=countError.message;return;}
     historyTotal=count||0;
     const totalPages=pageSize?Math.max(1,Math.ceil(historyTotal/pageSize)):1;
     historyPage=Math.min(Math.max(1,historyPage),totalPages);
-    let query=db.from('inventory_history').select('*').gte('changed_at',startIso).lt('changed_at',endIso).order('changed_at',{ascending:false});
+    let query=applyHistoryFilters(db.from('inventory_history').select('*')).order('changed_at',{ascending:false});
     if(pageSize){const from=(historyPage-1)*pageSize;query=query.range(from,from+pageSize-1);}
     const {data,error}=await query;
     if(error){$('historyFilterMessage').textContent=error.message;return;}
-    $('historyRows').innerHTML=(data||[]).map(h=>`<tr><td>${new Date(h.changed_at).toLocaleString()}</td><td>${esc(h.product_name||h.barcode)}</td><td>${esc(h.action)}</td><td>${h.quantity_change>0?'+':''}${h.quantity_change} ${esc(h.location||'')}</td><td>${esc(h.changed_by_email||'User')}</td></tr>`).join('')||'<tr><td colspan="5">No history found for this date range.</td></tr>';
+    $('historyRows').innerHTML=(data||[]).map(h=>`<tr><td>${new Date(h.changed_at).toLocaleString()}</td><td><strong>${esc(h.product_name||h.barcode||'Unknown product')}</strong>${h.barcode?`<small class="history-product-barcode">${esc(h.barcode)}</small>`:''}</td><td><span class="history-action history-action-${esc(String(h.action||'edit').toLowerCase())}">${esc(String(h.action||'edit').toUpperCase())}</span></td><td class="history-details">${esc(fallbackHistoryDetails(h))}</td><td>${historyUserDisplay(h)}</td></tr>`).join('')||'<tr><td colspan="5">No history found for the selected filters.</td></tr>';
     $('historyPageInfo').textContent=pageSize?`Page ${historyPage} of ${totalPages}`:`${historyTotal} rows`;
     $('historyPreviousButton').disabled=!pageSize||historyPage<=1;
     $('historyNextButton').disabled=!pageSize||historyPage>=totalPages;
@@ -453,6 +619,9 @@
   $('historyApplyDateButton').onclick=()=>{historyPage=1;loadHistory()};
   $('historyTodayButton').onclick=()=>{const today=localDateValue(new Date());$('historyStartDate').value=today;$('historyEndDate').value=today;historyPage=1;loadHistory()};
   $('historyPageSize').onchange=()=>{historyPage=1;loadHistory()};
+  if($('historyUserFilter'))$('historyUserFilter').onchange=()=>{historyPage=1;loadHistory()};
+  if($('historyActionFilter'))$('historyActionFilter').onchange=()=>{historyPage=1;loadHistory()};
+  if($('historyProductFilter'))$('historyProductFilter').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();historyPage=1;loadHistory()}});
   $('historyPreviousButton').onclick=()=>{if(historyPage>1){historyPage--;loadHistory()}};
   $('historyNextButton').onclick=()=>{historyPage++;loadHistory()};
   async function renderAdmin(){if(!isAdmin())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');await loadAdminUsers();const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));renderReports();initializeHistoryDates();await loadHistory()}

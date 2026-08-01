@@ -1,0 +1,10 @@
+project_id = "palrtkdvdtkqmvkjfuud"
+
+[functions.clover-connect]
+verify_jwt = false
+
+[functions.clover-callback]
+verify_jwt = false
+
+[functions.clover-test]
+verify_jwt = false

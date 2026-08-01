@@ -1,0 +1,48 @@
+Shelf2 V11 — Clover Sandbox OAuth Setup
+
+This release adds a secure Clover connection proof-of-concept.
+It does not import sales and does not change inventory.
+
+1. Back up your current local project.
+2. In Supabase SQL Editor, run supabase-clover-v11.sql.
+3. Install and open Supabase CLI.
+4. In this project folder:
+   supabase login
+   supabase link --project-ref palrtkdvdtkqmvkjfuud
+5. Generate a 32-byte encryption key:
+   macOS/Linux: openssl rand -base64 32
+   PowerShell:
+     $bytes = New-Object byte[] 32
+     [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+     [Convert]::ToBase64String($bytes)
+6. Set secrets:
+   supabase secrets set CLOVER_APP_ID="YOUR_SANDBOX_APP_ID"
+   supabase secrets set CLOVER_APP_SECRET="YOUR_SANDBOX_APP_SECRET"
+   supabase secrets set CLOVER_ENVIRONMENT="sandbox"
+   supabase secrets set CLOVER_CALLBACK_URL="https://palrtkdvdtkqmvkjfuud.supabase.co/functions/v1/clover-callback"
+   supabase secrets set SHELF2_RETURN_URL="YOUR_EXACT_SHELF2_HTTPS_URL"
+   supabase secrets set CLOVER_TOKEN_ENCRYPTION_KEY="YOUR_BASE64_32_BYTE_KEY"
+7. Deploy:
+   supabase functions deploy clover-connect --no-verify-jwt
+   supabase functions deploy clover-callback --no-verify-jwt
+   supabase functions deploy clover-test --no-verify-jwt
+8. Clover REST Configuration:
+   Site URL:
+     https://palrtkdvdtkqmvkjfuud.supabase.co/functions/v1
+   Alternate Launch Path:
+     /clover-connect
+   CORS Domain:
+     Leave blank
+   Default OAuth Response:
+     Code
+9. Replace index.html, css/styles.css, and js/app.js together.
+10. Hard refresh.
+11. Admin → Clover integration → Connect Clover sandbox.
+12. Approve in Clover, return to Shelf2, then click Test connection.
+
+Security:
+- Never put the Clover App Secret in app.js or GitHub.
+- Never commit .env files.
+- OAuth tokens are AES-GCM encrypted before database storage.
+- Browser roles cannot read token tables.
+- clover-test validates Supabase authentication and Admin role.

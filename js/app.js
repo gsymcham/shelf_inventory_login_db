@@ -2,6 +2,9 @@
   const SUPABASE_URL = 'https://palrtkdvdtkqmvkjfuud.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhbHJ0a2R2ZHRrcW12a2pmdXVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwOTEyMjQsImV4cCI6MjEwMDY2NzIyNH0.5gYn9PvkMZFk922qULn4GmCQvgUnHeiES4mSEVe5q0w';
   const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  const CLOVER_CONNECT_URL=`${SUPABASE_URL}/functions/v1/clover-connect`;
+  let cloverConnection=null;
+
   const $=id=>document.getElementById(id);
   let inventory=[],categories=[],distributors=[],categoryRecords=[],distributorRecords=[],adminUsers=[],manageState=null,currentUser=null,userRole='staff',channel=null,currentEditId=null,pendingBarcode=null,scanMode='edit',quickProduct=null,authMode='signin',html5QrCode=null,camRunning=false,panelQrCode=null,panelCameraRunning=false,historyPage=1,historyTotal=0;
   const money=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'});
@@ -60,7 +63,7 @@
   function subscribe(){if(channel)db.removeChannel(channel);channel=db.channel('inventory-live').on('postgres_changes',{event:'*',schema:'public',table:'inventory'},()=>loadInventory()).subscribe()}
   function findProduct(code){return inventory.find(p=>sameBarcode(p.barcode,code))}
   async function lookupCatalog(code){const exact=normalizeBarcode(code);let {data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').eq('barcode',exact).maybeSingle();if(error)throw error;if(!data){const stripped=exact.replace(/^0+/,'');if(stripped!==exact){({data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').eq('barcode',stripped).maybeSingle());if(error)throw error}}return data}
-  function setMode(mode){scanMode=mode;document.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));$('modeHelp').textContent=mode==='edit'?'Scan to open and edit a product.':mode==='receive'?'Scan an existing product and add received units.':'Scan an existing product and remove sold, damaged, or transferred units.';$('quickAdjust').classList.remove('active');quickProduct=null}
+  function setMode(mode){scanMode=mode;document.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));$('modeHelp').textContent=mode==='edit'?'Scan to open and edit a product.':mode==='receive'?'Scan an existing product and add received units.':'Scan an existing product and remove sold, damaged, or transferred units.';$('quickAdjust').classList.remove('active');quickProduct=null;if($('quickReasonWrap'))$('quickReasonWrap').style.display=mode==='remove'?'block':'none'}
   document.querySelectorAll('.mode-btn').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
   function clearScanSearch(){
     const input=$('scanProductSearch'),results=$('scanSearchResults');
@@ -131,7 +134,16 @@
     const {error}=await db.from('inventory').update(updates).eq('id',quickProduct.id);
     if(error){$('quickAdjustError').textContent=error.message;return;}
     const bottleChange=loc==='cases'?sign*qty*quickProduct.unitsPerCase:sign*qty;
-    await writeHistory({inventory_id:quickProduct.id,barcode:quickProduct.barcode,product_name:quickProduct.name,action:scanMode,location:loc,quantity_change:bottleChange,changed_by:currentUser.id,details:loc==='cases'?`${scanMode==='receive'?'Received':'Removed'} ${qty} case${qty===1?'':'s'} (${Math.abs(bottleChange)} bottles)`: `${historyLocationLabel(loc)} ${signed(sign*qty)}`});
+    const totalBefore=totalUnits(quickProduct);
+    const totalAfter=totalBefore+bottleChange;
+    const locationAfter=available+sign*qty;
+    const reason=scanMode==='remove'?($('quickReason')?.value||'other'):'received';
+    const movementType=scanMode==='receive'?'receive':(reason==='sale'?'sale':'remove');
+    const soldBottles=movementType==='sale'?Math.abs(bottleChange):0;
+    const unitPrice=Number(quickProduct.price||0),unitCost=Number(quickProduct.cost||0);
+    const revenue=soldBottles*unitPrice,costTotal=soldBottles*unitCost;
+    await writeMovement({inventory_id:quickProduct.id,barcode:quickProduct.barcode,product_name:quickProduct.name,movement_type:movementType,reason,location:loc,quantity_change:sign*qty,bottle_equivalent:bottleChange,location_quantity_before:available,location_quantity_after:locationAfter,total_stock_before:totalBefore,total_stock_after:totalAfter,unit_price:unitPrice,unit_cost:unitCost,revenue,cost_total:costTotal,gross_profit:revenue-costTotal});
+    await writeHistory({inventory_id:quickProduct.id,barcode:quickProduct.barcode,product_name:quickProduct.name,action:scanMode,location:loc,quantity_change:bottleChange,changed_by:currentUser.id,details:loc==='cases'?`${scanMode==='receive'?'Received':'Removed'} ${qty} case${qty===1?'':'s'} (${Math.abs(bottleChange)} bottles)${scanMode==='remove'?` • ${reason.replaceAll('_',' ')}`:''}`: `${historyLocationLabel(loc)} ${signed(sign*qty)}${scanMode==='remove'?` • ${reason.replaceAll('_',' ')}`:''}`});
     toast(`${scanMode==='receive'?'Received':'Removed'} ${qty} ${loc==='cases'?'case(s)':'unit(s)'}`);
     $('quickAdjust').classList.remove('active');quickProduct=null;clearScanSearch();await loadInventory();
   });
@@ -274,6 +286,23 @@
     if(Number(oldProduct.lowStockThreshold)!==Number(newProduct.low_stock_threshold))parts.push(`Threshold ${oldProduct.lowStockThreshold}→${newProduct.low_stock_threshold}`);
     return parts.join(' • ')||'Product saved with no field changes';
   }
+  async function writeMovement(entry){
+    const user=currentHistoryUser();
+    const payload={
+      inventory_id:entry.inventory_id||null,product_name:entry.product_name||'Unknown product',barcode:entry.barcode||null,
+      movement_type:entry.movement_type,reason:entry.reason||null,location:entry.location||'all',
+      quantity_change:Number(entry.quantity_change||0),bottle_equivalent:Number(entry.bottle_equivalent||0),
+      location_quantity_before:entry.location_quantity_before??null,location_quantity_after:entry.location_quantity_after??null,
+      total_stock_before:entry.total_stock_before??null,total_stock_after:entry.total_stock_after??null,
+      unit_price:entry.unit_price??null,unit_cost:entry.unit_cost??null,revenue:Number(entry.revenue||0),
+      cost_total:Number(entry.cost_total||0),gross_profit:Number(entry.gross_profit||0),
+      user_id:currentUser?.id||null,user_name:user.name||'Name not provided',user_email:user.email||null
+    };
+    const {error}=await db.from('inventory_movements').insert(payload);
+    if(error)console.error('Unable to write inventory movement:',error);
+    return error;
+  }
+
   async function writeHistory(entry){
     const payload={...entry,details:entry.details||null};
     let {error}=await db.from('inventory_history').insert(payload);
@@ -295,7 +324,11 @@
     if(currentEditId){
       const oldProduct=inventory.find(x=>x.id===currentEditId);
       ({error}=await db.from('inventory').update(product).eq('id',currentEditId));
-      if(!error)await writeHistory({inventory_id:currentEditId,barcode:product.barcode,product_name:product.name,action:'edit',location:'all',quantity_change:(product.floor_qty+(product.backroom_qty)+(product.backroom_cases*product.units_per_case))-(oldProduct?totalUnits(oldProduct):0),changed_by:currentUser.id,details:buildEditDetails(oldProduct,product)});
+      if(!error){
+        const beforeTotal=oldProduct?totalUnits(oldProduct):0,afterTotal=product.floor_qty+product.backroom_qty+product.backroom_cases*product.units_per_case;
+        await writeHistory({inventory_id:currentEditId,barcode:product.barcode,product_name:product.name,action:'edit',location:'all',quantity_change:afterTotal-beforeTotal,changed_by:currentUser.id,details:buildEditDetails(oldProduct,product)});
+        if(afterTotal!==beforeTotal)await writeMovement({inventory_id:currentEditId,barcode:product.barcode,product_name:product.name,movement_type:'adjustment',reason:'manual_edit',location:'all',quantity_change:afterTotal-beforeTotal,bottle_equivalent:afterTotal-beforeTotal,total_stock_before:beforeTotal,total_stock_after:afterTotal,unit_price:product.price,unit_cost:product.cost});
+      }
     }else{
       const r=await db.from('inventory').insert(product).select('id').single();error=r.error;
       if(!error){
@@ -303,7 +336,9 @@
         if(product.floor_qty)createdParts.push(`Floor ${product.floor_qty}`);
         if(product.backroom_qty)createdParts.push(`Back room ${product.backroom_qty}`);
         if(product.backroom_cases)createdParts.push(`Cases ${product.backroom_cases} × ${product.units_per_case}`);
-        await writeHistory({inventory_id:r.data.id,barcode:product.barcode,product_name:product.name,action:'create',location:'all',quantity_change:product.floor_qty+product.backroom_qty+product.backroom_cases*product.units_per_case,changed_by:currentUser.id,details:createdParts.join(' • ')});
+        const createdTotal=product.floor_qty+product.backroom_qty+product.backroom_cases*product.units_per_case;
+        await writeHistory({inventory_id:r.data.id,barcode:product.barcode,product_name:product.name,action:'create',location:'all',quantity_change:createdTotal,changed_by:currentUser.id,details:createdParts.join(' • ')});
+        if(createdTotal>0)await writeMovement({inventory_id:r.data.id,barcode:product.barcode,product_name:product.name,movement_type:'create',reason:'opening_stock',location:'all',quantity_change:createdTotal,bottle_equivalent:createdTotal,total_stock_before:0,total_stock_after:createdTotal,unit_price:product.price,unit_cost:product.cost});
       }
     }
     if(error){toast(error.message);return}
@@ -624,11 +659,385 @@
   if($('historyProductFilter'))$('historyProductFilter').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();historyPage=1;loadHistory()}});
   $('historyPreviousButton').onclick=()=>{if(historyPage>1){historyPage--;loadHistory()}};
   $('historyNextButton').onclick=()=>{historyPage++;loadHistory()};
-  async function renderAdmin(){if(!isAdmin())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');await loadAdminUsers();const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));renderReports();initializeHistoryDates();await loadHistory()}
-  function renderReports(){const cat=$('reportCategory').value,dist=$('reportDistributor').value,filtered=inventory.filter(p=>(!cat||p.category===cat)&&(!dist||p.distributor===dist)),groups={};filtered.forEach(p=>{const k=p.category||'Uncategorized';(groups[k]??=[]).push(p)});$('reportRows').innerHTML=Object.entries(groups).sort().map(([k,v])=>{const s=stats(v);return`<tr><td>${esc(k)}</td><td>${s.products}</td><td>${s.units}</td><td>${money.format(s.retail)}</td><td>${money.format(s.cost)}</td></tr>`}).join('')||'<tr><td colspan="5">No report data.</td></tr>'}
-  $('reportCategory').onchange=renderReports;$('reportDistributor').onchange=renderReports;
+
+  // Reports & analytics
+  let analyticsPeriod = 'today';
+  let analyticsReport = null;
+
+  function analyticsDateValue(date = new Date()) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function analyticsParseDate(value) {
+    if (!value) return null;
+    const [y, m, d] = value.split('-').map(Number);
+    if (!y || !m || !d) return null;
+    return new Date(y, m - 1, d);
+  }
+
+  function analyticsRangeFor(period) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let start = new Date(today);
+    let end = new Date(today);
+    if (period === 'week') {
+      const day = start.getDay();
+      const mondayOffset = day === 0 ? -6 : 1 - day;
+      start.setDate(start.getDate() + mondayOffset);
+    } else if (period === 'month') {
+      start = new Date(today.getFullYear(), today.getMonth(), 1);
+    } else if (period === 'custom') {
+      start = analyticsParseDate($('analyticsStartDate')?.value);
+      end = analyticsParseDate($('analyticsEndDate')?.value);
+    }
+    return { start, end };
+  }
+
+  function analyticsSetCustomDates(start, end) {
+    if ($('analyticsStartDate')) $('analyticsStartDate').value = analyticsDateValue(start);
+    if ($('analyticsEndDate')) $('analyticsEndDate').value = analyticsDateValue(end);
+  }
+
+  function analyticsDateBounds(start, end) {
+    const from = new Date(start);
+    from.setHours(0, 0, 0, 0);
+    const until = new Date(end);
+    until.setDate(until.getDate() + 1);
+    until.setHours(0, 0, 0, 0);
+    return { fromIso: from.toISOString(), untilIso: until.toISOString() };
+  }
+
+  function analyticsPeriodDays(start, end) {
+    const a = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+    const b = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+    return Math.max(1, Math.floor((b - a) / 86400000) + 1);
+  }
+
+  function analyticsProductKey(row) {
+    return row.inventory_id || row.barcode || row.product_name || row.id;
+  }
+
+  function analyticsNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  function analyticsBuildReport(movements, start, end) {
+    const groups = new Map();
+    const ordered = [...movements].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+    for (const movement of ordered) {
+      const key = analyticsProductKey(movement);
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          inventoryId: movement.inventory_id || null,
+          productName: movement.product_name || 'Unknown product',
+          barcode: movement.barcode || '',
+          starting: movement.total_stock_before == null ? 0 : analyticsNumber(movement.total_stock_before),
+          ending: movement.total_stock_after == null ? 0 : analyticsNumber(movement.total_stock_after),
+          received: 0,
+          sold: 0,
+          other: 0,
+          revenue: 0,
+          cost: 0,
+          profit: 0,
+          movements: 0
+        });
+      }
+      const product = groups.get(key);
+      product.productName = movement.product_name || product.productName;
+      product.barcode = movement.barcode || product.barcode;
+      product.ending = movement.total_stock_after == null ? product.ending : analyticsNumber(movement.total_stock_after);
+      const bottles = analyticsNumber(movement.bottle_equivalent);
+      if (movement.movement_type === 'receive') product.received += Math.abs(bottles);
+      else if (movement.movement_type === 'sale') product.sold += Math.abs(bottles);
+      else product.other += bottles;
+      product.revenue += analyticsNumber(movement.revenue);
+      product.cost += analyticsNumber(movement.cost_total);
+      product.profit += analyticsNumber(movement.gross_profit);
+      product.movements += 1;
+    }
+
+    const products = [...groups.values()].sort((a, b) => a.productName.localeCompare(b.productName));
+    const revenue = products.reduce((sum, item) => sum + item.revenue, 0);
+    const cost = products.reduce((sum, item) => sum + item.cost, 0);
+    const profit = products.reduce((sum, item) => sum + item.profit, 0);
+    const sold = products.reduce((sum, item) => sum + item.sold, 0);
+    const received = products.reduce((sum, item) => sum + item.received, 0);
+    const lowStock = inventory.filter(p => p.lowStockAlertEnabled && p.lowStockThreshold > 0 && totalUnits(p) > 0 && totalUnits(p) <= p.lowStockThreshold);
+    const outOfStock = inventory.filter(p => totalUnits(p) <= 0);
+    const periodDays = analyticsPeriodDays(start, end);
+
+    const sales = products.filter(item => item.sold > 0).sort((a, b) => b.sold - a.sold || b.revenue - a.revenue);
+    const fastMovers = sales.slice(0, 10);
+    const salesByInventory = new Map(products.map(item => [item.inventoryId, item.sold]));
+    const slowRunners = inventory
+      .filter(product => totalUnits(product) > 0)
+      .map(product => {
+        const unitsSold = analyticsNumber(salesByInventory.get(product.id));
+        const currentStock = totalUnits(product);
+        const averageDailySales = unitsSold / periodDays;
+        const daysOfInventory = averageDailySales > 0 ? currentStock / averageDailySales : null;
+        const stockCost = currentStock * analyticsNumber(product.cost);
+        let recommendation;
+        if (unitsSold === 0) recommendation = `No sales in this period. Review shelf placement or pricing and pause reordering until stock decreases.`;
+        else if (daysOfInventory != null && daysOfInventory > 90) recommendation = `About ${Math.round(daysOfInventory)} days of inventory remain. Reduce future orders and consider a promotion.`;
+        else recommendation = `Movement is below the fastest sellers. Monitor another period before increasing orders.`;
+        return { product, unitsSold, currentStock, averageDailySales, daysOfInventory, stockCost, recommendation };
+      })
+      .filter(item => item.unitsSold === 0 || (item.daysOfInventory != null && item.daysOfInventory >= 45))
+      .sort((a, b) => (b.daysOfInventory || 999999) - (a.daysOfInventory || 999999))
+      .slice(0, 10);
+
+    return {
+      start,
+      end,
+      days: periodDays,
+      products,
+      sales,
+      fastMovers,
+      slowRunners,
+      lowStock,
+      outOfStock,
+      revenue,
+      cost,
+      profit,
+      margin: revenue > 0 ? (profit / revenue) * 100 : 0,
+      sold,
+      received,
+      movementCount: movements.length
+    };
+  }
+
+  function analyticsEmptyRow(columns, message) {
+    return `<tr><td colspan="${columns}">${esc(message)}</td></tr>`;
+  }
+
+  function renderAnalytics(report) {
+    analyticsReport = report;
+    $('analyticsRevenue').textContent = money.format(report.revenue);
+    $('analyticsCost').textContent = money.format(report.cost);
+    $('analyticsProfit').textContent = money.format(report.profit);
+    $('analyticsMargin').textContent = `${report.margin.toFixed(1)}%`;
+    $('analyticsSold').textContent = report.sold;
+    $('analyticsReceived').textContent = report.received;
+    $('analyticsLow').textContent = report.lowStock.length;
+    $('analyticsOut').textContent = report.outOfStock.length;
+
+    $('analyticsInventoryRows').innerHTML = report.products.length
+      ? report.products.map(item => `<tr><td><strong>${esc(item.productName)}</strong>${item.barcode ? `<small class="history-product-barcode">${esc(item.barcode)}</small>` : ''}</td><td>${item.starting}</td><td>+${item.received}</td><td>-${item.sold}</td><td>${signed(item.other)}</td><td>${item.ending}</td></tr>`).join('')
+      : analyticsEmptyRow(6, 'No inventory movements were recorded for this period.');
+
+    $('analyticsSalesRows').innerHTML = report.sales.length
+      ? report.sales.map(item => `<tr><td><strong>${esc(item.productName)}</strong></td><td>${item.sold}</td><td>${money.format(item.revenue)}</td><td>${money.format(item.cost)}</td><td>${money.format(item.profit)}</td></tr>`).join('')
+      : analyticsEmptyRow(5, 'No sales were recorded for this period. Use Remove with reason Sale.');
+
+    $('analyticsFastMovers').innerHTML = report.fastMovers.length
+      ? report.fastMovers.map((item, index) => `<div class="analytics-list-item"><strong>${index + 1}. ${esc(item.productName)}</strong><small>${item.sold} sold · ${(item.sold / report.days).toFixed(2)}/day · ${money.format(item.revenue)} revenue · ${money.format(item.profit)} profit</small></div>`).join('')
+      : '<div class="analytics-list-item"><small>No sales were recorded for this period.</small></div>';
+
+    $('analyticsSlowRunners').innerHTML = report.slowRunners.length
+      ? report.slowRunners.map(item => `<div class="analytics-list-item"><strong>${esc(item.product.name)}</strong><small>${item.currentStock} in stock · ${item.unitsSold} sold · ${item.daysOfInventory == null ? 'No movement' : `${Math.round(item.daysOfInventory)} days of inventory`} · ${money.format(item.stockCost)} cost value</small><div class="analytics-recommendation">${esc(item.recommendation)}</div></div>`).join('')
+      : '<div class="analytics-list-item"><small>No slow runners matched the current period.</small></div>';
+
+    $('analyticsStatus').textContent = `${report.movementCount} movement${report.movementCount === 1 ? '' : 's'} · ${report.products.length} changed product${report.products.length === 1 ? '' : 's'} · ${report.days} day${report.days === 1 ? '' : 's'}`;
+  }
+
+  async function loadAnalytics() {
+    if (!isAdmin()) return;
+    const status = $('analyticsStatus');
+    if (!status) return;
+    const { start, end } = analyticsRangeFor(analyticsPeriod);
+    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      status.textContent = 'Select a valid start and end date.';
+      return;
+    }
+    if (start > end) {
+      status.textContent = 'The report start date cannot be after the end date.';
+      return;
+    }
+    const days = analyticsPeriodDays(start, end);
+    if (days > 366) {
+      status.textContent = 'Select a report range of one year or less.';
+      return;
+    }
+    status.textContent = 'Loading report…';
+    const { fromIso, untilIso } = analyticsDateBounds(start, end);
+    const { data, error } = await db
+      .from('inventory_movements')
+      .select('*')
+      .gte('created_at', fromIso)
+      .lt('created_at', untilIso)
+      .order('created_at', { ascending: true });
+    if (error) {
+      console.error('Unable to load analytics:', error);
+      status.textContent = /inventory_movements/i.test(error.message || '')
+        ? 'Analytics table is unavailable. Run supabase-analytics-v10.1.sql, then refresh.'
+        : `Unable to load report: ${error.message}`;
+      return;
+    }
+    renderAnalytics(analyticsBuildReport(data || [], start, end));
+  }
+
+  function analyticsSetPeriod(period) {
+    analyticsPeriod = period;
+    document.querySelectorAll('[data-report-period]').forEach(button => {
+      button.classList.toggle('active', button.dataset.reportPeriod === period);
+    });
+    const custom = $('analyticsCustomDates');
+    if (custom) custom.hidden = period !== 'custom';
+    const range = analyticsRangeFor(period === 'custom' ? 'today' : period);
+    if (period !== 'custom') analyticsSetCustomDates(range.start, range.end);
+    if (period !== 'custom') loadAnalytics();
+  }
+
+  function analyticsEmailHtml(report) {
+    const period = `${report.start.toLocaleDateString()} – ${report.end.toLocaleDateString()}`;
+    const salesRows = report.sales.slice(0, 12).map(item => `<tr><td>${esc(item.productName)}</td><td>${item.sold}</td><td>${money.format(item.revenue)}</td><td>${money.format(item.cost)}</td><td>${money.format(item.profit)}</td></tr>`).join('');
+    const alerts = report.lowStock.concat(report.outOfStock.filter(item => !report.lowStock.some(low => low.id === item.id))).slice(0, 12);
+    const alertRows = alerts.map(item => `<tr><td>${esc(item.name)}</td><td>${totalUnits(item)}</td><td>${item.lowStockThreshold || 0}</td><td>${esc(item.distributor || '—')}</td></tr>`).join('');
+    return `<div class="email-report"><h2>Shelf2 Inventory Report</h2><p>${esc(period)}</p><div class="email-report-grid"><div><strong>${money.format(report.revenue)}</strong><span>Revenue</span></div><div><strong>${money.format(report.cost)}</strong><span>Cost</span></div><div><strong>${money.format(report.profit)}</strong><span>Gross profit</span></div><div><strong>${report.margin.toFixed(1)}%</strong><span>Gross margin</span></div><div><strong>${report.sold}</strong><span>Units sold</span></div><div><strong>${report.received}</strong><span>Units received</span></div></div><h3>Sales performance</h3><table><thead><tr><th>Product</th><th>Units</th><th>Revenue</th><th>Cost</th><th>Profit</th></tr></thead><tbody>${salesRows || '<tr><td colspan="5">No sales recorded.</td></tr>'}</tbody></table><h3>Low/out-of-stock alerts</h3><table><thead><tr><th>Product</th><th>Current</th><th>Alert at</th><th>Distributor</th></tr></thead><tbody>${alertRows || '<tr><td colspan="4">No alerts.</td></tr>'}</tbody></table><p><small>Generated by Shelf2. Financial totals include only removals marked Sale.</small></p></div>`;
+  }
+
+  function previewAnalyticsEmail() {
+    if (!analyticsReport) {
+      toast('Load a report first');
+      return;
+    }
+    $('reportEmailPreview').innerHTML = analyticsEmailHtml(analyticsReport);
+    $('reportPreviewModal').classList.add('active');
+  }
+
+  function analyticsCsvCell(value) {
+    const text = String(value ?? '');
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  function exportAnalyticsCsv() {
+    if (!analyticsReport) {
+      toast('Load a report first');
+      return;
+    }
+    const rows = [
+      ['Product', 'Barcode', 'Starting', 'Received', 'Sold', 'Other', 'Ending', 'Revenue', 'Cost', 'Gross Profit'],
+      ...analyticsReport.products.map(item => [item.productName, item.barcode, item.starting, item.received, item.sold, item.other, item.ending, item.revenue.toFixed(2), item.cost.toFixed(2), item.profit.toFixed(2)])
+    ];
+    const csv = rows.map(row => row.map(analyticsCsvCell).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `shelf2-report-${analyticsDateValue(analyticsReport.start)}-to-${analyticsDateValue(analyticsReport.end)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  document.querySelectorAll('[data-report-period]').forEach(button => {
+    button.addEventListener('click', () => analyticsSetPeriod(button.dataset.reportPeriod));
+  });
+  if ($('analyticsApply')) $('analyticsApply').addEventListener('click', loadAnalytics);
+  if ($('previewReportEmail')) $('previewReportEmail').addEventListener('click', previewAnalyticsEmail);
+  if ($('exportAnalyticsCsv')) $('exportAnalyticsCsv').addEventListener('click', exportAnalyticsCsv);
+  if ($('closeReportPreview')) $('closeReportPreview').addEventListener('click', () => $('reportPreviewModal').classList.remove('active'));
+  if ($('reportPreviewModal')) $('reportPreviewModal').addEventListener('click', event => {
+    if (event.target.id === 'reportPreviewModal') $('reportPreviewModal').classList.remove('active');
+  });
+  analyticsSetCustomDates(new Date(), new Date());
+
+
+  function setCloverMessage(message,type=''){
+    const el=$('cloverMessage');
+    if(!el)return;
+    el.textContent=message||'';
+    el.className='profile-message'+(type?' '+type:'');
+  }
+  function formatCloverDate(value){
+    if(!value)return'Never';
+    const date=new Date(value);
+    return Number.isNaN(date.getTime())?'Never':date.toLocaleString();
+  }
+  function renderCloverStatus(connection){
+    cloverConnection=connection||null;
+    const connected=Boolean(connection?.connected);
+    const badge=$('cloverStatusBadge');
+    if(!badge)return;
+    badge.textContent=connected?'Connected':'Not connected';
+    badge.className=`clover-status-badge ${connected?'connected':'disconnected'}`;
+    $('cloverMerchantName').textContent=connection?.merchant_name||'—';
+    $('cloverMerchantId').textContent=connection?.merchant_id||'—';
+    $('cloverEnvironment').textContent=(connection?.environment||'sandbox').replace(/^./,c=>c.toUpperCase());
+    $('cloverLastVerified').textContent=formatCloverDate(connection?.last_verified_at||connection?.updated_at);
+    $('cloverTestBtn').disabled=!connected;
+    $('cloverConnectBtn').textContent=connected?'Reconnect Clover sandbox':'Connect Clover sandbox';
+  }
+  async function loadCloverStatus(showMessage=false){
+    if(!isAdmin())return;
+    const badge=$('cloverStatusBadge');
+    if(badge){badge.textContent='Checking';badge.className='clover-status-badge checking'}
+    if(showMessage)setCloverMessage('Checking Clover connection…');
+    const {data,error}=await db.rpc('admin_clover_connection_status');
+    if(error){
+      renderCloverStatus(null);
+      setCloverMessage(error.message,'error');
+      return;
+    }
+    const connection=Array.isArray(data)?data[0]:data;
+    renderCloverStatus(connection||null);
+    if(showMessage)setCloverMessage(connection?.connected?'Connection status refreshed.':'Clover is not connected yet.',connection?.connected?'success':'');
+  }
+  async function testCloverConnection(){
+    if(!isAdmin())return;
+    const btn=$('cloverTestBtn');
+    btn.disabled=true;
+    btn.textContent='Testing…';
+    setCloverMessage('Contacting Clover securely through Supabase…');
+    const {data,error}=await db.functions.invoke('clover-test',{body:{action:'merchant'}});
+    btn.disabled=false;
+    btn.textContent='Test connection';
+    if(error){
+      setCloverMessage(error.message||'Unable to test Clover connection.','error');
+      return;
+    }
+    if(!data?.ok){
+      setCloverMessage(data?.error||'Clover connection test failed.','error');
+      return;
+    }
+    setCloverMessage(`Connected to ${data.merchant?.name||'Clover merchant'}. Clover API authentication is working.`,'success');
+    await loadCloverStatus(false);
+  }
+  function startCloverConnect(){
+    const returnUrl=new URL(window.location.href);
+    returnUrl.search='';
+    returnUrl.hash='';
+    const url=new URL(CLOVER_CONNECT_URL);
+    url.searchParams.set('return_url',returnUrl.toString());
+    window.location.assign(url.toString());
+  }
+
+  async function renderAdmin(){if(!isAdmin())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');await loadAdminUsers();const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));await loadCloverStatus(false);await loadAnalytics();initializeHistoryDates();await loadHistory()}
   $('adminAddCategory').onclick=async()=>{await addList('category',$('adminCategoryName').value);$('adminCategoryName').value='';if(isAdmin())renderAdmin()};$('adminAddDistributor').onclick=async()=>{await addList('distributor',$('adminDistributorName').value);$('adminDistributorName').value='';if(isAdmin())renderAdmin()};
   $('catalogImportBtn').onclick=async()=>{if(!isAdmin())return;const file=$('catalogFile').files[0];if(!file){toast('Choose a Clover Excel file');return}$('catalogImportStatus').textContent='Reading workbook…';try{const buf=await file.arrayBuffer(),book=XLSX.read(buf),sheet=book.Sheets['Items']||book.Sheets[book.SheetNames[0]],rows=XLSX.utils.sheet_to_json(sheet,{defval:''}),valid=new Map();for(const r of rows){const barcode=normalizeBarcode(r['Product Code']),price=Number(r['Price']);if(!barcode||!Number.isFinite(price)||price<0.99||String(r['Hidden']).toLowerCase()==='yes')continue;valid.set(barcode,{barcode,product_name:String(r['Name']||'').trim(),price,cost:Number(r['Cost'])||0,category:String(r['Modifier Groups']||'').trim()||null,distributor:null,updated_at:new Date().toISOString()})}const all=[...valid.values()],chunk=400;for(let i=0;i<all.length;i+=chunk){$('catalogImportStatus').textContent=`Importing ${Math.min(i+chunk,all.length)} of ${all.length}…`;const {error}=await db.from('product_catalog').upsert(all.slice(i,i+chunk),{onConflict:'barcode'});if(error)throw error}const cats=[...new Set(all.map(x=>x.category).filter(Boolean))].map(name=>({name,created_by:currentUser.id}));if(cats.length)await db.from('categories').upsert(cats,{onConflict:'name'});$('catalogImportStatus').textContent=`Imported or updated ${all.length} catalog products. Live inventory was not overwritten.`;await loadLists()}catch(e){$('catalogImportStatus').textContent=`Import failed: ${e.message}`}};
   $('camBtn').onclick=()=>camRunning?stopCamera():startCamera();function startCamera(){$('reader').style.display='block';html5QrCode=new Html5Qrcode('reader');html5QrCode.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:140}},t=>{stopCamera();handleScan(t)},()=>{}).then(()=>{camRunning=true;$('camBtn').textContent='Turn off'}).catch(e=>{$('camMsg').style.display='block';$('camMsg').textContent='Camera unavailable. Use the scanner input instead.'})}function stopCamera(){if(html5QrCode&&camRunning)html5QrCode.stop().then(()=>{html5QrCode.clear();$('reader').style.display='none';$('camBtn').textContent='Turn on';camRunning=false})}
+
+
+  if($('cloverConnectBtn'))$('cloverConnectBtn').addEventListener('click',startCloverConnect);
+  if($('cloverTestBtn'))$('cloverTestBtn').addEventListener('click',testCloverConnection);
+  if($('cloverRefreshBtn'))$('cloverRefreshBtn').addEventListener('click',()=>loadCloverStatus(true));
+  const cloverResult=new URLSearchParams(window.location.search).get('clover');
+  if(cloverResult){
+    window.history.replaceState({},document.title,window.location.pathname+window.location.hash);
+    setTimeout(()=>{
+      if(currentUser&&isAdmin()){
+        switchView('admin');
+        setCloverMessage(cloverResult==='connected'?'Clover sandbox connected successfully.':'Clover connection was not completed.',cloverResult==='connected'?'success':'error');
+      }
+    },700);
+  }
 
 })();

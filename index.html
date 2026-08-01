@@ -109,6 +109,19 @@
           </select>
         </div>
 
+        <div class="field" id="quickReasonWrap" style="display:none">
+          <label for="quickReason">Reason</label>
+          <select id="quickReason">
+            <option value="sale">Sale</option>
+            <option value="damage">Damage</option>
+            <option value="breakage">Breakage</option>
+            <option value="expired">Expired</option>
+            <option value="store_use">Store use</option>
+            <option value="count_correction">Count correction</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
         <div class="field">
           <label id="quickQtyLabel" for="quickQty">Quantity to adjust</label>
           <div class="quantity-stepper quick-adjust-stepper">
@@ -223,6 +236,34 @@
         <div class="metric-card wide"><div class="metric-value" id="dashProfit">$0.00</div><div class="metric-label">Potential gross profit</div></div>
       </div>
 
+
+      <details class="admin-card collapse-card" open>
+        <summary>Clover integration</summary>
+        <div class="collapse-body clover-integration">
+          <div class="clover-status-head">
+            <div>
+              <p class="eyebrow">Sandbox connection</p>
+              <h2>Clover</h2>
+              <p>Connect Shelf2 securely through Supabase. This first milestone reads merchant information only and does not change inventory.</p>
+            </div>
+            <span class="clover-status-badge disconnected" id="cloverStatusBadge">Not connected</span>
+          </div>
+          <div class="clover-metrics">
+            <div class="clover-info-card"><span>Merchant</span><strong id="cloverMerchantName">—</strong></div>
+            <div class="clover-info-card"><span>Merchant ID</span><strong id="cloverMerchantId">—</strong></div>
+            <div class="clover-info-card"><span>Environment</span><strong id="cloverEnvironment">Sandbox</strong></div>
+            <div class="clover-info-card"><span>Last verified</span><strong id="cloverLastVerified">Never</strong></div>
+          </div>
+          <div class="clover-actions">
+            <button class="btn btn-amber" id="cloverConnectBtn" type="button">Connect Clover sandbox</button>
+            <button class="btn btn-line" id="cloverTestBtn" type="button" disabled>Test connection</button>
+            <button class="btn btn-line" id="cloverRefreshBtn" type="button">Refresh status</button>
+          </div>
+          <div class="profile-message" id="cloverMessage" role="status" aria-live="polite"></div>
+          <p class="small-note">Clover secrets and OAuth tokens stay in Supabase Edge Functions. They are never placed in this page, <code>app.js</code>, local storage, or GitHub.</p>
+        </div>
+      </details>
+
       <div class="admin-card">
         <h2>Import Clover catalog</h2>
         <p>Upload the Clover Excel export. Only rows with a barcode and a price of at least $0.99 are imported. SKU and Clover quantity are ignored. Existing live inventory is never overwritten.</p>
@@ -266,11 +307,44 @@
         <div id="lowStockList"></div>
       </div>
 
-      <div class="admin-card">
-        <h2>Reports</h2>
-        <div class="report-controls"><select id="reportCategory"><option value="">All categories</option></select><select id="reportDistributor"><option value="">All distributors</option></select></div>
-        <div class="scroll-table"><table class="data-table"><thead><tr><th>Group</th><th>Products</th><th>Units</th><th>Retail</th><th>Cost</th></tr></thead><tbody id="reportRows"></tbody></table></div>
-      </div>
+      <details class="admin-card collapse-card" open>
+        <summary>Reports &amp; analytics</summary>
+        <div class="collapse-body analytics-body">
+          <div class="analytics-periods" role="group" aria-label="Report period">
+            <button class="btn btn-line btn-sm analytics-period active" type="button" data-report-period="today">Today</button>
+            <button class="btn btn-line btn-sm analytics-period" type="button" data-report-period="week">This week</button>
+            <button class="btn btn-line btn-sm analytics-period" type="button" data-report-period="month">This month</button>
+            <button class="btn btn-line btn-sm analytics-period" type="button" data-report-period="custom">Custom</button>
+          </div>
+          <div class="analytics-custom" id="analyticsCustomDates" hidden>
+            <label>Start <input id="analyticsStartDate" type="date"></label>
+            <label>End <input id="analyticsEndDate" type="date"></label>
+            <button class="btn btn-ink btn-sm" id="analyticsApply" type="button">Apply</button>
+          </div>
+          <div class="analytics-status" id="analyticsStatus">Loading report…</div>
+          <div class="analytics-metrics">
+            <div class="metric-card"><div class="metric-value" id="analyticsRevenue">$0.00</div><div class="metric-label">Revenue</div></div>
+            <div class="metric-card"><div class="metric-value" id="analyticsCost">$0.00</div><div class="metric-label">Cost of goods</div></div>
+            <div class="metric-card"><div class="metric-value" id="analyticsProfit">$0.00</div><div class="metric-label">Gross profit</div></div>
+            <div class="metric-card"><div class="metric-value" id="analyticsMargin">0%</div><div class="metric-label">Gross margin</div></div>
+            <div class="metric-card"><div class="metric-value" id="analyticsSold">0</div><div class="metric-label">Units sold</div></div>
+            <div class="metric-card"><div class="metric-value" id="analyticsReceived">0</div><div class="metric-label">Units received</div></div>
+            <div class="metric-card"><div class="metric-value" id="analyticsLow">0</div><div class="metric-label">Low stock</div></div>
+            <div class="metric-card"><div class="metric-value" id="analyticsOut">0</div><div class="metric-label">Out of stock</div></div>
+          </div>
+          <details class="analytics-panel" open><summary>Inventory tracking</summary><div class="scroll-table"><table class="data-table"><thead><tr><th>Product</th><th>Starting</th><th>Received</th><th>Sold</th><th>Other</th><th>Ending</th></tr></thead><tbody id="analyticsInventoryRows"></tbody></table></div></details>
+          <div class="analytics-two-column">
+            <details class="analytics-panel" open><summary>Fast movers</summary><div id="analyticsFastMovers" class="analytics-list"></div></details>
+            <details class="analytics-panel" open><summary>Slow runners &amp; suggestions</summary><div id="analyticsSlowRunners" class="analytics-list"></div></details>
+          </div>
+          <details class="analytics-panel"><summary>Sales performance</summary><div class="scroll-table"><table class="data-table"><thead><tr><th>Product</th><th>Units</th><th>Revenue</th><th>Cost</th><th>Profit</th></tr></thead><tbody id="analyticsSalesRows"></tbody></table></div></details>
+          <div class="analytics-actions">
+            <button class="btn btn-line" id="previewReportEmail" type="button">Preview email</button>
+            <button class="btn btn-line" id="exportAnalyticsCsv" type="button">Export CSV</button>
+          </div>
+          <p class="small-note">Financial totals count only removals marked <strong>Sale</strong>. Reports become accurate from the date movement tracking is installed.</p>
+        </div>
+      </details>
 
       <details class="admin-card collapse-card">
         <summary>Recent inventory history</summary>
@@ -350,6 +424,14 @@
       <button class="navbtn" data-view="profile"><span class="ic">👤</span>Profile</button>
     </div>
   </nav>
+
+  <div class="modal-overlay" id="reportPreviewModal">
+    <div class="modal-card report-preview-card">
+      <h2>Report email preview</h2>
+      <div id="reportEmailPreview" class="email-preview"></div>
+      <div class="modal-actions"><button class="btn btn-ink" id="closeReportPreview" type="button">Close</button></div>
+    </div>
+  </div>
 
   <div class="modal-overlay" id="manageModal">
     <div class="modal-card">

@@ -181,7 +181,20 @@
         <div class="icon">📤</div>
         <h2>Export to Excel</h2>
         <p>Downloads a spreadsheet of your full inventory — barcode, name, price, cost, category, distributor, quantities, cases, and status — ready to open, email, or archive.</p>
-        <button class="btn btn-amber btn-block" id="exportBtn">Download .xlsx</button>
+        <button class="btn btn-amber btn-block" id="exportBtn">Download Shelf2 .xlsx</button>
+
+        <div class="clover-export-box">
+          <div>
+            <h3>Export current inventory for Clover</h3>
+            <p>Creates Clover-format CSV or XLSX files using the current Shelf2 quantities. Clover ID is intentionally left blank so you can review the file before importing it into Clover.</p>
+          </div>
+          <div class="clover-export-actions">
+            <button class="btn btn-line" id="exportCloverCsvBtn" type="button">Download Clover CSV</button>
+            <button class="btn btn-line" id="exportCloverXlsxBtn" type="button">Download Clover XLSX</button>
+          </div>
+          <div class="small-note" id="cloverExportNote">Quantity = On Floor + Back Room (Open) + (Cases × Bottles per Case).</div>
+        </div>
+
         <div class="stat-strip">
           <div><div class="n mono" id="statTotal">0</div><div class="l">Products</div></div>
           <div><div class="n mono" id="statUnits">0</div><div class="l">Total units</div></div>
@@ -301,11 +314,13 @@
         </div>
       </details>
 
-      <div class="admin-card">
-        <h2>Low-stock alerts</h2>
-        <p>Products at or below their low-stock threshold.</p>
-        <div id="lowStockList"></div>
-      </div>
+      <details class="admin-card collapse-card" id="lowStockAlertsCard">
+        <summary><span id="lowStockAlertsSummary">Low-stock alerts</span></summary>
+        <div class="collapse-body">
+          <p>Products at or below their low-stock threshold.</p>
+          <div id="lowStockList"></div>
+        </div>
+      </details>
 
       <details class="admin-card collapse-card" open>
         <summary>Reports &amp; analytics</summary>

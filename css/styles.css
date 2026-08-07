@@ -937,3 +937,25 @@ body.authenticated #authOverlay{display:none}
 .clover-actions .btn:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:900px){.clover-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.clover-status-head{display:grid}.clover-status-badge{justify-self:start}.clover-metrics{grid-template-columns:1fr}.clover-actions{display:grid}.clover-actions .btn{width:100%}}
+
+.clover-export-box{
+  display:grid;
+  gap:10px;
+  margin-top:14px;
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:var(--paper);
+}
+.clover-export-box h3{margin:0 0 4px;font-size:15px}
+.clover-export-box p{margin:0;color:var(--ink-soft);font-size:12px;line-height:1.45}
+
+.clover-export-actions{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+@media(max-width:560px){
+  .clover-export-actions{grid-template-columns:1fr}
+  .clover-export-actions .btn{width:100%}
+}

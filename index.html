@@ -3,19 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
-<title>Shelf — Inventory Pro</title>
+<title>TC's Liquor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="css/styles.css">
+<link rel="icon" type="img" href="apple-touch-icon.png">
 </head>
 <body class="auth-loading">
 
   <div class="auth-overlay" id="authOverlay">
     <div class="auth-card">
-      <h2>Shelf2 Inventory</h2>
+      <h2>TC's Liquor</h2>
       <p>Sign in to access the shared inventory. Every authorized user sees the same products and quantities.</p>
       <div class="auth-tabs">
         <button class="btn btn-ink" id="authSignInTab" type="button">Sign in</button>
@@ -46,7 +47,7 @@
 
   <header>
     <div class="brand">
-      <h1>Shelf2</h1>
+      <h1>TC's Liquor</h1>
       <span class="count mono" id="headerCount">0 items</span>
     </div>
     <div class="barcode-rule"></div>
@@ -181,16 +182,17 @@
         <div class="icon">📤</div>
         <h2>Export to Excel</h2>
         <p>Downloads a spreadsheet of your full inventory — barcode, name, price, cost, category, distributor, quantities, cases, and status — ready to open, email, or archive.</p>
-        <button class="btn btn-amber btn-block" id="exportBtn">Download Shelf2 .xlsx</button>
+        <button class="btn btn-amber btn-block" id="exportBtn">Download Inventory .xlsx</button>
 
         <div class="clover-export-box">
           <div>
             <h3>Export current inventory for Clover</h3>
-            <p>Creates Clover-format CSV or XLSX files using the current Shelf2 quantities. Clover ID is intentionally left blank so you can review the file before importing it into Clover.</p>
+            <p>Creates simple Clover CSV/XLSX files for review, or a full Clover v2 import workbook with all 5 required sheets. Clover ID is intentionally left blank so you can review the file before importing it into Clover.</p>
           </div>
-          <div class="clover-export-actions">
+          <div class="clover-export-actions clover-export-actions-three">
             <button class="btn btn-line" id="exportCloverCsvBtn" type="button">Download Clover CSV</button>
             <button class="btn btn-line" id="exportCloverXlsxBtn" type="button">Download Clover XLSX</button>
+            <button class="btn btn-amber" id="exportCloverWorkbookBtn" type="button">Download Clover Import Workbook</button>
           </div>
           <div class="small-note" id="cloverExportNote">Quantity = On Floor + Back Room (Open) + (Cases × Bottles per Case).</div>
         </div>
@@ -210,7 +212,7 @@
       <div class="profile-grid">
         <div class="profile-card">
           <h2>My Profile</h2>
-          <p>Update the name shown in Shelf2. Your email address is tied to your login account.</p>
+          <p>Update the name shown in TC's Liquor. Your email address is tied to your login account.</p>
           <div class="field">
             <label for="profileName">Full name</label>
             <input type="text" id="profileName" autocomplete="name" placeholder="Enter your full name">
@@ -250,14 +252,14 @@
       </div>
 
 
-      <details class="admin-card collapse-card" open>
+      <details class="admin-card collapse-card admin-sensitive" open>
         <summary>Clover integration</summary>
         <div class="collapse-body clover-integration">
           <div class="clover-status-head">
             <div>
               <p class="eyebrow">Sandbox connection</p>
               <h2>Clover</h2>
-              <p>Connect Shelf2 securely through Supabase. This first milestone reads merchant information only and does not change inventory.</p>
+              <p>Connect TC's Liquor securely through Supabase. This first milestone reads merchant information only and does not change inventory.</p>
             </div>
             <span class="clover-status-badge disconnected" id="cloverStatusBadge">Not connected</span>
           </div>
@@ -303,10 +305,10 @@
         </div>
       </details>
 
-      <details class="admin-card collapse-card">
+      <details class="admin-card collapse-card admin-sensitive">
         <summary>Users &amp; roles</summary>
         <div class="collapse-body">
-          <p>Manage users, edit names, and change Staff/Admin roles. Your own role is protected.</p>
+          <p>Manage users, edit names, and change Staff/Manager/Admin roles. Your own role is protected.</p>
           <div class="user-toolbar">
             <input id="adminUserSearch" type="search" placeholder="Search users by name or email…" autocomplete="off">
           </div>
@@ -314,7 +316,7 @@
         </div>
       </details>
 
-      <details class="admin-card collapse-card" id="lowStockAlertsCard">
+      <details class="admin-card collapse-card admin-sensitive" id="lowStockAlertsCard">
         <summary><span id="lowStockAlertsSummary">Low-stock alerts</span></summary>
         <div class="collapse-body">
           <p>Products at or below their low-stock threshold.</p>
@@ -322,7 +324,7 @@
         </div>
       </details>
 
-      <details class="admin-card collapse-card" open>
+      <details class="admin-card collapse-card admin-sensitive" open>
         <summary>Reports &amp; analytics</summary>
         <div class="collapse-body analytics-body">
           <div class="analytics-periods" role="group" aria-label="Report period">
@@ -361,7 +363,7 @@
         </div>
       </details>
 
-      <details class="admin-card collapse-card">
+      <details class="admin-card collapse-card admin-sensitive">
         <summary>Recent inventory history</summary>
         <div class="collapse-body">
           <div class="history-toolbar">

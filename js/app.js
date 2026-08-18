@@ -17,13 +17,15 @@
   $('authConfirmPassword').addEventListener('keydown',e=>{if(e.key==='Enter')$('authSubmit').click()});
   $('signOutBtn').onclick=async()=>{const {error}=await db.auth.signOut();if(error){console.error('Sign-out failed:',error);toast(error.message)}};
   let authInitialized=false;
-  async function applySession(session){currentUser=session?.user||null;document.body.classList.toggle('authenticated',!!currentUser);$('signOutBtn').style.display=currentUser?'block':'none';$('userEmail').textContent=currentUser?.email||'';if(currentUser){try{await loadRole();subscribe();await loadInventory()}catch(error){console.error('Session initialization failed:',error)}}else{inventory=[];userRole='staff';document.body.classList.remove('is-admin');sync('Offline')}document.body.classList.remove('auth-loading');authInitialized=true}
+  async function applySession(session){currentUser=session?.user||null;document.body.classList.toggle('authenticated',!!currentUser);$('signOutBtn').style.display=currentUser?'block':'none';$('userEmail').textContent=currentUser?.email||'';if(currentUser){try{await loadRole();subscribe();await loadInventory()}catch(error){console.error('Session initialization failed:',error)}}else{inventory=[];userRole='staff';document.body.classList.remove('is-admin','is-manager');sync('Offline')}document.body.classList.remove('auth-loading');authInitialized=true}
   db.auth.onAuthStateChange((event,session)=>{if(!authInitialized||event==='SIGNED_IN'||event==='SIGNED_OUT'||event==='USER_UPDATED')applySession(session)});
   async function initializeAuth(){try{const {data:{session},error}=await db.auth.getSession();if(error)throw error;await applySession(session)}catch(error){console.error('Unable to restore session:',error);showAuthMessage(error?.message||'Unable to restore session. Please sign in again.');await applySession(null)}}
   initializeAuth();
   const views={scan:$('view-scan'),inventory:$('view-inventory'),export:$('view-export'),profile:$('view-profile'),admin:$('view-admin')};
   const navBtns=[...document.querySelectorAll('.navbtn')];
   const isAdmin=()=>userRole==='admin';
+  const isManager=()=>userRole==='manager';
+  const canManage=()=>isAdmin()||isManager();
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
   function sync(text,error=false){$('syncState').textContent=text;$('syncState').style.color=error?'var(--rust)':'var(--green)'}
@@ -32,9 +34,9 @@
   function fromDb(r){return{id:r.id,barcode:r.barcode,name:r.name,price:r.price==null?null:Number(r.price),cost:r.cost==null?null:Number(r.cost),category:r.category||'',distributor:r.distributor||'',floorQty:r.floor_qty||0,backroomQty:r.backroom_qty||0,backroomCases:r.backroom_cases||0,unitsPerCase:r.units_per_case||0,lowStockThreshold:r.low_stock_threshold||0,lowStockAlertEnabled:r.low_stock_alert_enabled!==false,status:r.status||'in_stock',updatedAt:new Date(r.updated_at).getTime(),updatedBy:r.updated_by}}
   const caseUnits=p=>(p.backroomCases||0)*(p.unitsPerCase||0);
   const totalUnits=p=>(p.floorQty||0)+(p.backroomQty||0)+caseUnits(p);
-  function switchView(name){if(name==='admin'&&!isAdmin())name='scan';Object.entries(views).forEach(([k,v])=>v&&v.classList.toggle('active',k===name));navBtns.forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='inventory')renderList();if(name==='export')renderStats();if(name==='admin')renderAdmin();if(name==='profile')loadMyProfile();if(name==='scan')clearScanSearch()}
+  function switchView(name){if(name==='admin'&&!canManage())name='scan';Object.entries(views).forEach(([k,v])=>v&&v.classList.toggle('active',k===name));navBtns.forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='inventory')renderList();if(name==='export')renderStats();if(name==='admin')renderAdmin();if(name==='profile')loadMyProfile();if(name==='scan')clearScanSearch()}
   navBtns.forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
-  function applyRoleUI(){document.body.classList.toggle('is-admin',isAdmin());$('roleChip').style.display='inline-block';$('roleChip').textContent=isAdmin()?'ADMIN':'STAFF';$('addCategoryBtn').style.display=isAdmin()?'block':'none';$('addDistributorBtn').style.display=isAdmin()?'block':'none'}
+  function applyRoleUI(){document.body.classList.toggle('is-admin',isAdmin());document.body.classList.toggle('is-manager',isManager());$('roleChip').style.display='inline-block';$('roleChip').textContent=isAdmin()?'ADMIN':isManager()?'MANAGER':'STAFF';$('addCategoryBtn').style.display=canManage()?'block':'none';$('addDistributorBtn').style.display=canManage()?'block':'none'}
   async function loadRole(){userRole='staff';if(!currentUser)return;const {data,error}=await db.from('profiles').select('role').eq('id',currentUser.id).maybeSingle();if(!error&&data?.role)userRole=data.role;applyRoleUI()}
   function setProfileMessage(id,message,type=''){const el=$(id);if(!el)return;el.textContent=message;el.className='profile-message'+(type?' '+type:'')}
   function loadMyProfile(){if(!currentUser)return;$('profileName').value=currentUser.user_metadata?.full_name||currentUser.user_metadata?.name||'';$('profileEmail').value=currentUser.email||'';setProfileMessage('profileMessage','');setProfileMessage('passwordMessage','')}
@@ -59,7 +61,7 @@
     fillSelect('reportDistributor',distributors,$('reportDistributor')?.value,'All distributors');
     fillSelect('inventoryCategoryFilter',categories,$('inventoryCategoryFilter')?.value,'All categories');
   }
-  async function loadInventory(){if(!currentUser)return;sync('Syncing…');const {data,error}=await db.from('inventory').select('*').order('updated_at',{ascending:false});if(error){sync('Sync failed',true);toast(error.message);return}inventory=(data||[]).map(fromDb);await loadLists();$('headerCount').textContent=`${inventory.length} item${inventory.length===1?'':'s'}`;renderList();renderStats();if(isAdmin())await renderAdmin();sync('Live')}
+  async function loadInventory(){if(!currentUser)return;sync('Syncing…');const {data,error}=await db.from('inventory').select('*').order('updated_at',{ascending:false});if(error){sync('Sync failed',true);toast(error.message);return}inventory=(data||[]).map(fromDb);await loadLists();$('headerCount').textContent=`${inventory.length} item${inventory.length===1?'':'s'}`;renderList();renderStats();if(canManage())await renderAdmin();sync('Live')}
   function subscribe(){if(channel)db.removeChannel(channel);channel=db.channel('inventory-live').on('postgres_changes',{event:'*',schema:'public',table:'inventory'},()=>loadInventory()).subscribe()}
   function findProduct(code){return inventory.find(p=>sameBarcode(p.barcode,code))}
   async function lookupCatalog(code){const exact=normalizeBarcode(code);let {data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').eq('barcode',exact).maybeSingle();if(error)throw error;if(!data){const stripped=exact.replace(/^0+/,'');if(stripped!==exact){({data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').eq('barcode',stripped).maybeSingle());if(error)throw error}}return data}
@@ -209,7 +211,7 @@
     if(event.key.length===1){scannerBuffer+=event.key;clearTimeout(scannerResetTimer);scannerResetTimer=setTimeout(()=>scannerBuffer='',180)}
   });
   let lookupSeq=0;
-  function openPanel(p,auto=false){currentEditId=p?.id||null;$('panelTitle').textContent=p?'Edit product':'Add product';$('panelBarcode').textContent=p?.barcode||'New item';$('fieldBarcode').value=p?.barcode||pendingBarcode||'';$('fieldName').value=p?.name||'';$('fieldPrice').value=p?.price??'';$('fieldCost').value=p?.cost??'';fillSelect('fieldCategory',categories,p?.category||'','Uncategorized');fillSelect('fieldDistributor',distributors,p?.distributor||'','Not assigned');$('fieldFloorQty').value=p?.floorQty??0;$('fieldBackQty').value=p?.backroomQty??0;$('fieldCases').value=p?.backroomCases??0;$('fieldUnitsPerCase').value=p?.unitsPerCase??0;$('fieldLowStockEnabled').checked=p?p.lowStockAlertEnabled:true;$('fieldLowStock').value=p?p.lowStockThreshold:1;syncLowStockFields();$('panelDelete').style.display=p&&isAdmin()?'block':'none';$('panelOverlay').classList.add('active');$('lookupStatus').textContent='';updateTotal();if(auto)runLookup($('fieldBarcode').value)}
+  function openPanel(p,auto=false){currentEditId=p?.id||null;$('panelTitle').textContent=p?'Edit product':'Add product';$('panelBarcode').textContent=p?.barcode||'New item';$('fieldBarcode').value=p?.barcode||pendingBarcode||'';$('fieldName').value=p?.name||'';$('fieldPrice').value=p?.price??'';$('fieldCost').value=p?.cost??'';fillSelect('fieldCategory',categories,p?.category||'','Uncategorized');fillSelect('fieldDistributor',distributors,p?.distributor||'','Not assigned');$('fieldFloorQty').value=p?.floorQty??0;$('fieldBackQty').value=p?.backroomQty??0;$('fieldCases').value=p?.backroomCases??0;$('fieldUnitsPerCase').value=p?.unitsPerCase??0;$('fieldLowStockEnabled').checked=p?p.lowStockAlertEnabled:true;$('fieldLowStock').value=p?p.lowStockThreshold:1;syncLowStockFields();$('panelDelete').style.display=p&&canManage()?'block':'none';$('panelOverlay').classList.add('active');$('lookupStatus').textContent='';updateTotal();if(auto)runLookup($('fieldBarcode').value)}
   async function runLookup(code){const seq=++lookupSeq;$('lookupStatus').textContent='Looking up imported catalog…';try{const d=await lookupCatalog(code);if(seq!==lookupSeq||currentEditId)return;if(d){$('fieldName').value=d.product_name||'';$('fieldPrice').value=d.price??'';$('fieldCost').value=d.cost??'';fillSelect('fieldCategory',categories,d.category||'','Uncategorized');fillSelect('fieldDistributor',distributors,d.distributor||'','Not assigned');$('lookupStatus').textContent='Found in imported catalog';$('lookupStatus').classList.add('found')}else $('lookupStatus').textContent='No catalog match — enter details manually'}catch(e){$('lookupStatus').textContent=`Catalog error: ${e.message}`}}
   function updateTotal(){const f=+$('fieldFloorQty').value||0,b=+$('fieldBackQty').value||0,c=+$('fieldCases').value||0,u=+$('fieldUnitsPerCase').value||0;$('totalLine').textContent=`Total on hand: ${f+b+c*u} units · ${c} unopened case${c===1?'':'s'}`}
   function syncLowStockFields(){$('lowStockThresholdWrap').classList.toggle('disabled',!$('fieldLowStockEnabled').checked)}
@@ -260,7 +262,7 @@
   $('panelScanBarcodeBtn').onclick=startPanelBarcodeScanner;
   $('panelCancel').onclick=closePanel;$('panelOverlay').onclick=e=>{if(e.target.id==='panelOverlay')closePanel()};$('manualAddBtn').onclick=()=>openPanel(null);
   async function addList(kind,nameOverride){
-    if(!isAdmin()){toast('Admin access required');return}
+    if(!canManage()){toast('Manager or Admin access required');return}
     const label=kind==='category'?'category':'distributor';
     const name=(nameOverride??prompt(`Enter new ${label}:`)??'').trim();
     if(!name)return;
@@ -362,7 +364,7 @@
     if(error){toast(error.message);return}
     closePanel();toast('Saved');await loadInventory();
   };
-  $('panelDelete').onclick=async()=>{if(!isAdmin()||!currentEditId)return;const p=inventory.find(x=>x.id===currentEditId);const {error}=await db.from('inventory').delete().eq('id',currentEditId);if(error){toast(error.message);return}await writeHistory({inventory_id:null,barcode:p.barcode,product_name:p.name,action:'delete',location:'all',quantity_change:-totalUnits(p),changed_by:currentUser.id,details:`Product deleted • ${totalUnits(p)} bottle${totalUnits(p)===1?'':'s'} removed`});closePanel();await loadInventory()};
+  $('panelDelete').onclick=async()=>{if(!canManage()||!currentEditId)return;const p=inventory.find(x=>x.id===currentEditId);const {error}=await db.from('inventory').delete().eq('id',currentEditId);if(error){toast(error.message);return}await writeHistory({inventory_id:null,barcode:p.barcode,product_name:p.name,action:'delete',location:'all',quantity_change:-totalUnits(p),changed_by:currentUser.id,details:`Product deleted • ${totalUnits(p)} bottle${totalUnits(p)===1?'':'s'} removed`});closePanel();await loadInventory()};
   let inventorySortKey='name';
   let inventorySortDirection='asc';
 
@@ -490,7 +492,7 @@
       Number(p.cost||0).toFixed(2),
       String(p.barcode??''),   // IMPORTANT: keep barcode as text; never Number()/parseInt()
       '',
-      String(p.category||''), // Shelf2 Category -> Clover Modifier Group
+      String(p.category||''), // TC's Liquor Category -> Clover Modifier Group
       totalUnits(p),
       String(p.name||''),
       'No',
@@ -521,7 +523,7 @@
 
     const note=$('cloverExportNote');
     if(note){
-      note.textContent=`Exported ${rows.length} products as Clover CSV. Product Code is written exactly as stored in Shelf2, including leading zeros.`;
+      note.textContent=`Exported ${rows.length} products as Clover CSV. Product Code is written exactly as stored in TC's Liquor, including leading zeros.`;
     }
     toast('Clover CSV downloaded');
   }
@@ -588,11 +590,255 @@
     toast('Clover XLSX downloaded');
   }
 
+
+  const CLOVER_TEMPLATE_URL='templates/clover-import-template.xlsx';
+
+  function clearSheetDataRows(sheet,headerRow=0){
+    if(!sheet)return;
+    for(const key of Object.keys(sheet)){
+      if(key[0]==='!')continue;
+      const decoded=XLSX.utils.decode_cell(key);
+      if(decoded.r>headerRow)delete sheet[key];
+    }
+  }
+
+  function setWorksheetRef(sheet,lastRowZeroBased,lastColZeroBased){
+    sheet['!ref']=XLSX.utils.encode_range({
+      s:{r:0,c:0},
+      e:{r:Math.max(0,lastRowZeroBased),c:Math.max(0,lastColZeroBased)}
+    });
+    if(sheet['!autofilter']){
+      sheet['!autofilter'].ref=sheet['!ref'];
+    }
+  }
+
+  function forceTextColumn(sheet,columnIndex,startRowZeroBased,endRowZeroBased){
+    for(let r=startRowZeroBased;r<=endRowZeroBased;r++){
+      const address=XLSX.utils.encode_cell({r,c:columnIndex});
+      const cell=sheet[address];
+      if(!cell)continue;
+      cell.t='s';
+      cell.v=String(cell.v??'');
+      cell.z='@';
+    }
+  }
+
+  function buildCloverWorkbookData(){
+    const exportData=getCloverExportRows();
+    if(!exportData)return null;
+
+    // Use one clean normalized category value for both Clover relationships.
+    const products=inventory.map(p=>({
+      id:p.id,
+      name:String(p.name||'').trim(),
+      barcode:String(p.barcode??''),
+      price:Number(p.price||0),
+      cost:Number(p.cost||0),
+      quantity:totalUnits(p),
+      category:String(p.category||'').trim()
+    }));
+
+    const categories=[...new Set(
+      products.map(p=>p.category).filter(Boolean)
+    )].sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'}));
+
+    return {products,categories};
+  }
+
+  async function exportCloverImportWorkbook(){
+    const data=buildCloverWorkbookData();
+    if(!data)return;
+
+    const button=$('exportCloverWorkbookBtn');
+    if(button){
+      button.disabled=true;
+      button.textContent='Building workbook…';
+    }
+
+    try{
+      const response=await fetch(CLOVER_TEMPLATE_URL,{cache:'no-store'});
+      if(!response.ok){
+        throw new Error(`Clover template could not be loaded (${response.status}).`);
+      }
+
+      const templateBuffer=await response.arrayBuffer();
+      const workbook=XLSX.read(templateBuffer,{
+        type:'array',
+        cellStyles:true,
+        cellDates:true
+      });
+
+      const requiredSheets=[
+        'Instructions & Glossary',
+        'Items',
+        'Modifier Groups',
+        'Categories',
+        'Tax Rates'
+      ];
+
+      const missing=requiredSheets.filter(name=>!workbook.Sheets[name]);
+      if(missing.length){
+        throw new Error(`Clover template is missing: ${missing.join(', ')}`);
+      }
+
+      // ---------------------------------------------------------
+      // ITEMS
+      // ---------------------------------------------------------
+      const itemsSheet=workbook.Sheets['Items'];
+      clearSheetDataRows(itemsSheet,0);
+
+      const itemRows=data.products.map(p=>[
+        '',                    // Clover ID
+        p.name,                // Name
+        '',                    // Alternate Name
+        '',                    // Description
+        p.price,               // Price
+        'Fixed',               // Price Type
+        '',                    // Price Unit
+        p.cost,                // Cost
+        p.barcode,             // Product Code - EXACT STRING
+        '',                    // SKU
+        p.quantity,            // Quantity
+        'No',                  // Hidden?
+        'Yes',                 // Default tax rates?
+        'No',                  // Non-revenue item?
+        p.name,                // Printer Labels
+        p.category,            // Modifier Groups
+        p.category,            // Categories
+        '',                    // Tax Rates (use Clover default)
+        '',                    // Variant Attribute
+        ''                     // Variant Option
+      ]);
+
+      if(itemRows.length){
+        XLSX.utils.sheet_add_aoa(itemsSheet,itemRows,{origin:'A2'});
+      }
+      setWorksheetRef(itemsSheet,itemRows.length,19);
+
+      // Product Code must always be text: never scientific notation,
+      // never stripping a leading zero.
+      forceTextColumn(itemsSheet,8,1,itemRows.length);
+
+      // Also force IDs / SKU / relationship text columns as strings.
+      [0,1,2,3,4,5,6,7,9,11,12,13,14,15,16,17,18,19].forEach(col=>{
+        if([4,7].includes(col))return;
+        forceTextColumn(itemsSheet,col,1,itemRows.length);
+      });
+
+      // Price and Cost numeric formatting.
+      for(let r=1;r<=itemRows.length;r++){
+        [4,7].forEach(c=>{
+          const addr=XLSX.utils.encode_cell({r,c});
+          if(itemsSheet[addr]){
+            itemsSheet[addr].t='n';
+            itemsSheet[addr].v=Number(itemsSheet[addr].v||0);
+            itemsSheet[addr].z='0.00';
+          }
+        });
+        const qtyAddr=XLSX.utils.encode_cell({r,c:10});
+        if(itemsSheet[qtyAddr]){
+          itemsSheet[qtyAddr].t='n';
+          itemsSheet[qtyAddr].v=Number(itemsSheet[qtyAddr].v||0);
+          itemsSheet[qtyAddr].z='0';
+        }
+      }
+
+      // ---------------------------------------------------------
+      // MODIFIER GROUPS
+      // One unique TC's Liquor category = one Clover Modifier Group.
+      // ---------------------------------------------------------
+      const modifierSheet=workbook.Sheets['Modifier Groups'];
+      clearSheetDataRows(modifierSheet,0);
+
+      const modifierRows=data.categories.map(category=>[
+        '',        // Modifier Group ID
+        category,  // Modifier Group Name
+        'No',      // Pop up Automatically?
+        '',        // Modifier
+        '',        // Price
+        '',        // Required Quantity
+        ''         // Max Quantity
+      ]);
+
+      if(modifierRows.length){
+        XLSX.utils.sheet_add_aoa(modifierSheet,modifierRows,{origin:'A2'});
+      }
+      setWorksheetRef(modifierSheet,modifierRows.length,6);
+      for(let c=0;c<=6;c++)forceTextColumn(modifierSheet,c,1,modifierRows.length);
+
+      // ---------------------------------------------------------
+      // CATEGORIES
+      // Clover's category export groups item names underneath the category.
+      // Example:
+      //   Bourbon | Maker's Mark
+      //           | Woodford Reserve
+      // ---------------------------------------------------------
+      const categorySheet=workbook.Sheets['Categories'];
+      clearSheetDataRows(categorySheet,0);
+
+      const categoryRows=[];
+      data.categories.forEach(category=>{
+        const names=data.products
+          .filter(p=>p.category===category)
+          .map(p=>p.name)
+          .sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'}));
+
+        if(!names.length){
+          categoryRows.push(['',category,'','']);
+          return;
+        }
+
+        names.forEach((name,index)=>{
+          categoryRows.push([
+            '',                      // Category ID
+            index===0?category:'',   // Category Name on first row only
+            '',                      // Subcategory Name
+            name                     // Item Sort Order
+          ]);
+        });
+      });
+
+      if(categoryRows.length){
+        XLSX.utils.sheet_add_aoa(categorySheet,categoryRows,{origin:'A2'});
+      }
+      setWorksheetRef(categorySheet,categoryRows.length,3);
+      for(let c=0;c<=3;c++)forceTextColumn(categorySheet,c,1,categoryRows.length);
+
+      // Instructions & Glossary and Tax Rates are intentionally NOT changed.
+      // They come from the sanitized Clover v2 template.
+
+      XLSX.writeFile(
+        workbook,
+        `clover-import-workbook-${new Date().toISOString().slice(0,10)}.xlsx`,
+        {cellStyles:true,compression:true}
+      );
+
+      const note=$('cloverExportNote');
+      if(note){
+        note.textContent=`Built Clover v2 workbook with ${data.products.length} items and ${data.categories.length} unique categories. Category is written to both Modifier Groups and Categories.`;
+      }
+      toast('Clover import workbook downloaded');
+    }catch(error){
+      console.error(error);
+      toast(error?.message||'Could not build Clover import workbook');
+      const note=$('cloverExportNote');
+      if(note)note.textContent=error?.message||'Could not build Clover import workbook.';
+    }finally{
+      if(button){
+        button.disabled=false;
+        button.textContent='Download Clover Import Workbook';
+      }
+    }
+  }
+
   if($('exportCloverCsvBtn')){
     $('exportCloverCsvBtn').onclick=exportCloverInventoryCsv;
   }
   if($('exportCloverXlsxBtn')){
     $('exportCloverXlsxBtn').onclick=exportCloverInventoryXlsx;
+  }
+  if($('exportCloverWorkbookBtn')){
+    $('exportCloverWorkbookBtn').onclick=exportCloverImportWorkbook;
   }
 
   function usageCount(kind,name){
@@ -641,7 +887,7 @@
       const displayName=u.full_name||u.name||u.user_metadata?.full_name||'Name not provided';
       return `<div class="user-row" data-user-id="${u.id}">
         <div class="user-identity"><div class="user-name">${esc(displayName)}</div><div class="user-email-line">${esc(u.email||'Unknown email')}</div><div class="user-meta">Joined ${u.created_at?new Date(u.created_at).toLocaleDateString():'—'}${self?' · You':''}</div></div>
-        <select class="user-role-select" data-original-role="${esc(u.role||'staff')}" ${protectedUser?'disabled':''}><option value="staff" ${u.role==='staff'?'selected':''}>Staff</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>
+        <select class="user-role-select" data-original-role="${esc(u.role||'staff')}" ${protectedUser?'disabled':''}><option value="staff" ${u.role==='staff'?'selected':''}>Staff</option><option value="manager" ${u.role==='manager'?'selected':''}>Manager</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>
         <div class="user-status ${u.is_active?'active':'disabled'}">${u.is_active?'Active':'Disabled'}</div>
         <div class="user-actions"><button class="mini-btn user-edit-name">Edit name</button><button class="mini-btn user-toggle" ${protectedUser?'disabled':''}>${u.is_active?'Disable':'Enable'}</button><button class="mini-btn user-remove" ${protectedUser?'disabled':''}>Remove</button></div>
       </div>`}).join(''):'<div class="small-note">No matching users found.</div>';
@@ -1066,7 +1312,7 @@
     const salesRows = report.sales.slice(0, 12).map(item => `<tr><td>${esc(item.productName)}</td><td>${item.sold}</td><td>${money.format(item.revenue)}</td><td>${money.format(item.cost)}</td><td>${money.format(item.profit)}</td></tr>`).join('');
     const alerts = report.lowStock.concat(report.outOfStock.filter(item => !report.lowStock.some(low => low.id === item.id))).slice(0, 12);
     const alertRows = alerts.map(item => `<tr><td>${esc(item.name)}</td><td>${totalUnits(item)}</td><td>${item.lowStockThreshold || 0}</td><td>${esc(item.distributor || '—')}</td></tr>`).join('');
-    return `<div class="email-report"><h2>Shelf2 Inventory Report</h2><p>${esc(period)}</p><div class="email-report-grid"><div><strong>${money.format(report.revenue)}</strong><span>Revenue</span></div><div><strong>${money.format(report.cost)}</strong><span>Cost</span></div><div><strong>${money.format(report.profit)}</strong><span>Gross profit</span></div><div><strong>${report.margin.toFixed(1)}%</strong><span>Gross margin</span></div><div><strong>${report.sold}</strong><span>Units sold</span></div><div><strong>${report.received}</strong><span>Units received</span></div></div><h3>Sales performance</h3><table><thead><tr><th>Product</th><th>Units</th><th>Revenue</th><th>Cost</th><th>Profit</th></tr></thead><tbody>${salesRows || '<tr><td colspan="5">No sales recorded.</td></tr>'}</tbody></table><h3>Low/out-of-stock alerts</h3><table><thead><tr><th>Product</th><th>Current</th><th>Alert at</th><th>Distributor</th></tr></thead><tbody>${alertRows || '<tr><td colspan="4">No alerts.</td></tr>'}</tbody></table><p><small>Generated by Shelf2. Financial totals include only removals marked Sale.</small></p></div>`;
+    return `<div class="email-report"><h2>TC's Liquor Inventory Report</h2><p>${esc(period)}</p><div class="email-report-grid"><div><strong>${money.format(report.revenue)}</strong><span>Revenue</span></div><div><strong>${money.format(report.cost)}</strong><span>Cost</span></div><div><strong>${money.format(report.profit)}</strong><span>Gross profit</span></div><div><strong>${report.margin.toFixed(1)}%</strong><span>Gross margin</span></div><div><strong>${report.sold}</strong><span>Units sold</span></div><div><strong>${report.received}</strong><span>Units received</span></div></div><h3>Sales performance</h3><table><thead><tr><th>Product</th><th>Units</th><th>Revenue</th><th>Cost</th><th>Profit</th></tr></thead><tbody>${salesRows || '<tr><td colspan="5">No sales recorded.</td></tr>'}</tbody></table><h3>Low/out-of-stock alerts</h3><table><thead><tr><th>Product</th><th>Current</th><th>Alert at</th><th>Distributor</th></tr></thead><tbody>${alertRows || '<tr><td colspan="4">No alerts.</td></tr>'}</tbody></table><p><small>Generated by TC's Liquor. Financial totals include only removals marked Sale.</small></p></div>`;
   }
 
   function previewAnalyticsEmail() {
@@ -1097,7 +1343,7 @@
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `shelf2-report-${analyticsDateValue(analyticsReport.start)}-to-${analyticsDateValue(analyticsReport.end)}.csv`;
+    link.download = `tcs-liquor-report-${analyticsDateValue(analyticsReport.start)}-to-${analyticsDateValue(analyticsReport.end)}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1186,9 +1432,9 @@
     window.location.assign(url.toString());
   }
 
-  async function renderAdmin(){if(!isAdmin())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');await loadAdminUsers();const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));if($('lowStockAlertsSummary'))$('lowStockAlertsSummary').textContent=`Low-stock alerts (${low.length})`;$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));await loadCloverStatus(false);await loadAnalytics();initializeHistoryDates();await loadHistory()}
-  $('adminAddCategory').onclick=async()=>{await addList('category',$('adminCategoryName').value);$('adminCategoryName').value='';if(isAdmin())renderAdmin()};$('adminAddDistributor').onclick=async()=>{await addList('distributor',$('adminDistributorName').value);$('adminDistributorName').value='';if(isAdmin())renderAdmin()};
-  $('catalogImportBtn').onclick=async()=>{if(!isAdmin())return;const file=$('catalogFile').files[0];if(!file){toast('Choose a Clover Excel file');return}$('catalogImportStatus').textContent='Reading workbook…';try{const buf=await file.arrayBuffer(),book=XLSX.read(buf),sheet=book.Sheets['Items']||book.Sheets[book.SheetNames[0]],rows=XLSX.utils.sheet_to_json(sheet,{defval:''}),valid=new Map();for(const r of rows){const barcode=normalizeBarcode(r['Product Code']),price=Number(r['Price']);if(!barcode||!Number.isFinite(price)||price<0.99||String(r['Hidden']).toLowerCase()==='yes')continue;valid.set(barcode,{barcode,product_name:String(r['Name']||'').trim(),price,cost:Number(r['Cost'])||0,category:String(r['Modifier Groups']||'').trim()||null,distributor:null,updated_at:new Date().toISOString()})}const all=[...valid.values()],chunk=400;for(let i=0;i<all.length;i+=chunk){$('catalogImportStatus').textContent=`Importing ${Math.min(i+chunk,all.length)} of ${all.length}…`;const {error}=await db.from('product_catalog').upsert(all.slice(i,i+chunk),{onConflict:'barcode'});if(error)throw error}const cats=[...new Set(all.map(x=>x.category).filter(Boolean))].map(name=>({name,created_by:currentUser.id}));if(cats.length)await db.from('categories').upsert(cats,{onConflict:'name'});$('catalogImportStatus').textContent=`Imported or updated ${all.length} catalog products. Live inventory was not overwritten.`;await loadLists()}catch(e){$('catalogImportStatus').textContent=`Import failed: ${e.message}`}};
+  async function renderAdmin(){if(!canManage())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');if(!isAdmin())return;await loadAdminUsers();const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));if($('lowStockAlertsSummary'))$('lowStockAlertsSummary').textContent=`Low-stock alerts (${low.length})`;$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));await loadCloverStatus(false);await loadAnalytics();initializeHistoryDates();await loadHistory()}
+  $('adminAddCategory').onclick=async()=>{await addList('category',$('adminCategoryName').value);$('adminCategoryName').value='';if(canManage())renderAdmin()};$('adminAddDistributor').onclick=async()=>{await addList('distributor',$('adminDistributorName').value);$('adminDistributorName').value='';if(canManage())renderAdmin()};
+  $('catalogImportBtn').onclick=async()=>{if(!canManage())return;const file=$('catalogFile').files[0];if(!file){toast('Choose a Clover Excel file');return}$('catalogImportStatus').textContent='Reading workbook…';try{const buf=await file.arrayBuffer(),book=XLSX.read(buf),sheet=book.Sheets['Items']||book.Sheets[book.SheetNames[0]],rows=XLSX.utils.sheet_to_json(sheet,{defval:''}),valid=new Map();for(const r of rows){const barcode=normalizeBarcode(r['Product Code']),price=Number(r['Price']);if(!barcode||!Number.isFinite(price)||price<0.99||String(r['Hidden']).toLowerCase()==='yes')continue;valid.set(barcode,{barcode,product_name:String(r['Name']||'').trim(),price,cost:Number(r['Cost'])||0,category:String(r['Modifier Groups']||'').trim()||null,distributor:null,updated_at:new Date().toISOString()})}const all=[...valid.values()],chunk=400;for(let i=0;i<all.length;i+=chunk){$('catalogImportStatus').textContent=`Importing ${Math.min(i+chunk,all.length)} of ${all.length}…`;const {error}=await db.from('product_catalog').upsert(all.slice(i,i+chunk),{onConflict:'barcode'});if(error)throw error}const cats=[...new Set(all.map(x=>x.category).filter(Boolean))].map(name=>({name,created_by:currentUser.id}));if(cats.length)await db.from('categories').upsert(cats,{onConflict:'name'});$('catalogImportStatus').textContent=`Imported or updated ${all.length} catalog products. Live inventory was not overwritten.`;await loadLists()}catch(e){$('catalogImportStatus').textContent=`Import failed: ${e.message}`}};
   $('camBtn').onclick=()=>camRunning?stopCamera():startCamera();function startCamera(){$('reader').style.display='block';html5QrCode=new Html5Qrcode('reader');html5QrCode.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:140}},t=>{stopCamera();handleScan(t)},()=>{}).then(()=>{camRunning=true;$('camBtn').textContent='Turn off'}).catch(e=>{$('camMsg').style.display='block';$('camMsg').textContent='Camera unavailable. Use the scanner input instead.'})}function stopCamera(){if(html5QrCode&&camRunning)html5QrCode.stop().then(()=>{html5QrCode.clear();$('reader').style.display='none';$('camBtn').textContent='Turn on';camRunning=false})}
 
 

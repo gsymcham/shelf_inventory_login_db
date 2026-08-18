@@ -959,3 +959,16 @@ body.authenticated #authOverlay{display:none}
   .clover-export-actions{grid-template-columns:1fr}
   .clover-export-actions .btn{width:100%}
 }
+
+/* V11.5 Manager role */
+body.is-manager .admin-only{display:flex!important;}
+body.is-manager section.admin-only{display:none!important;}
+body.is-manager section.admin-only.active{display:block!important;}
+body.is-manager .admin-sensitive{display:none!important;}
+
+.clover-export-actions-three{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+}
+@media(max-width:850px){
+  .clover-export-actions-three{grid-template-columns:1fr}
+}

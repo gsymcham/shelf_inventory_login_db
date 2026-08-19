@@ -9,15 +9,108 @@
   let inventory=[],categories=[],distributors=[],categoryRecords=[],distributorRecords=[],adminUsers=[],manageState=null,currentUser=null,userRole='staff',channel=null,currentEditId=null,pendingBarcode=null,scanMode='edit',quickProduct=null,authMode='signin',html5QrCode=null,camRunning=false,panelQrCode=null,panelCameraRunning=false,historyPage=1,historyTotal=0;
   const money=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'});
   function showAuthMessage(message,type='error'){$('authError').textContent=message;$('authError').className='auth-error'+(type==='success'?' success':type==='info'?' info':'')}
-  function setAuthMode(m){authMode=m;const s=m==='signin';$('authSignInTab').className='btn '+(s?'btn-ink':'btn-line');$('authSignUpTab').className='btn '+(!s?'btn-ink':'btn-line');$('authSubmit').textContent=s?'Sign in':'Create account';$('authNameWrap').classList.toggle('visible',!s);$('authConfirmWrap').classList.toggle('visible',!s);$('authPassword').autocomplete=s?'current-password':'new-password';$('authConfirmPassword').value='';showAuthMessage('','info')}
+  function setAuthMode(m){
+    authMode=m;
+    const signin=m==='signin';
+    $('authSignInTab').className='btn '+(signin?'btn-ink':'btn-line');
+    $('authSignUpTab').className='btn '+(!signin?'btn-ink':'btn-line');
+    $('authSubmit').textContent=signin?'Sign in':'Submit access request';
+    $('authIntro').textContent=signin
+      ?"Sign in to access TC's Liquor inventory. New users must request access and be approved by an Admin."
+      :"Request access with your full name and email. An Admin will approve or deny the request. If approved, you will receive an email to create your password.";
+    $('authNameWrap').classList.toggle('visible',!signin);
+    $('authPasswordWrap').style.display=signin?'block':'none';
+    $('authConfirmWrap').classList.remove('visible');
+    $('authPassword').autocomplete='current-password';
+    $('authConfirmPassword').value='';
+    showAuthMessage('','info');
+  }
   $('authSignInTab').onclick=()=>setAuthMode('signin');
-  $('authSignUpTab').onclick=()=>setAuthMode('signup');
-  $('authSubmit').onclick=async()=>{const name=$('authName').value.trim(),email=$('authEmail').value.trim(),password=$('authPassword').value,confirmPassword=$('authConfirmPassword').value,button=$('authSubmit');showAuthMessage('','info');if(authMode==='signup'&&!name)return showAuthMessage('Enter your full name.');if(!email||password.length<6)return showAuthMessage('Enter a valid email and a password with at least 6 characters.');if(authMode==='signup'&&password!==confirmPassword)return showAuthMessage('Passwords do not match. Please enter the same password twice.');button.disabled=true;button.textContent=authMode==='signin'?'Signing in…':'Creating account…';try{if(authMode==='signin'){const {error}=await db.auth.signInWithPassword({email,password});if(error)showAuthMessage(error.message)}else{const redirectTo=window.location.origin+window.location.pathname;const {data,error}=await db.auth.signUp({email,password,options:{emailRedirectTo:redirectTo,data:{full_name:name,name:name}}});if(error)return showAuthMessage(error.message);$('authName').value='';$('authPassword').value='';$('authConfirmPassword').value='';if(data.session){showAuthMessage('Account created successfully. You have been signed in.','success')}else{showAuthMessage(`Verification email sent to ${email}. Open the email and click the confirmation link before signing in.`,'success')}}}catch(error){showAuthMessage(error?.message||'Authentication failed. Please try again.')}finally{button.disabled=false;button.textContent=authMode==='signin'?'Sign in':'Create account'}};
+  $('authSignUpTab').onclick=()=>setAuthMode('request');
+  $('authSubmit').onclick=async()=>{
+    const name=$('authName').value.trim();
+    const email=$('authEmail').value.trim();
+    const password=$('authPassword').value;
+    const button=$('authSubmit');
+    showAuthMessage('','info');
+
+    if(authMode==='request'){
+      if(!name)return showAuthMessage('Enter your full name.');
+      if(!email||!email.includes('@'))return showAuthMessage('Enter a valid email address.');
+      button.disabled=true;button.textContent='Submitting…';
+      try{
+        const {data,error}=await db.rpc('submit_access_request',{p_full_name:name,p_email:email});
+        if(error)throw error;
+        const result=data||{};
+        showAuthMessage(result.message||'Access request submitted. An Admin will review it.','success');
+        $('authName').value='';
+      }catch(error){
+        showAuthMessage(error?.message||'Unable to submit access request.');
+      }finally{
+        button.disabled=false;button.textContent='Submit access request';
+      }
+      return;
+    }
+
+    if(!email||password.length<6)return showAuthMessage('Enter a valid email and your password.');
+    button.disabled=true;button.textContent='Signing in…';
+    try{
+      const {error}=await db.auth.signInWithPassword({email,password});
+      if(error)showAuthMessage(error.message);
+    }catch(error){
+      showAuthMessage(error?.message||'Authentication failed. Please try again.');
+    }finally{
+      button.disabled=false;button.textContent='Sign in';
+    }
+  };
   $('authPassword').addEventListener('keydown',e=>{if(e.key==='Enter')$('authSubmit').click()});
   $('authConfirmPassword').addEventListener('keydown',e=>{if(e.key==='Enter')$('authSubmit').click()});
+
+  function invitationPasswordRequired(){
+    const meta=currentUser?.user_metadata||{};
+    const query=new URLSearchParams(window.location.search);
+    const hash=new URLSearchParams(window.location.hash.replace(/^#/,''));
+    return meta.must_set_password===true||query.get('invited')==='1'||hash.get('type')==='invite';
+  }
+  function setInviteMessage(message,type=''){
+    const el=$('invitePasswordMessage');
+    el.textContent=message;
+    el.className='auth-error'+(type==='success'?' success':type==='info'?' info':'');
+  }
+  function showInvitePasswordSetup(){
+    $('passwordSetupOverlay').classList.add('active');
+    $('passwordSetupOverlay').setAttribute('aria-hidden','false');
+    setInviteMessage('','info');
+  }
+  $('inviteSetPasswordBtn').onclick=async()=>{
+    const password=$('invitePassword').value;
+    const confirm=$('inviteConfirmPassword').value;
+    const btn=$('inviteSetPasswordBtn');
+    if(password.length<8)return setInviteMessage('Use at least 8 characters.');
+    if(password!==confirm)return setInviteMessage('Passwords do not match.');
+    btn.disabled=true;btn.textContent='Creating password…';
+    try{
+      const meta={...(currentUser?.user_metadata||{})};
+      delete meta.must_set_password;
+      const {data,error}=await db.auth.updateUser({password,data:meta});
+      if(error)throw error;
+      currentUser=data?.user||currentUser;
+      const url=new URL(window.location.href);
+      url.searchParams.delete('invited');
+      history.replaceState({},document.title,url.pathname+(url.search||''));
+      $('passwordSetupOverlay').classList.remove('active');
+      $('passwordSetupOverlay').setAttribute('aria-hidden','true');
+      $('invitePassword').value='';$('inviteConfirmPassword').value='';
+      toast('Password created. Your account is ready.');
+    }catch(error){
+      setInviteMessage(error?.message||'Unable to create password.');
+    }finally{
+      btn.disabled=false;btn.textContent='Create password';
+    }
+  };
   $('signOutBtn').onclick=async()=>{const {error}=await db.auth.signOut();if(error){console.error('Sign-out failed:',error);toast(error.message)}};
   let authInitialized=false;
-  async function applySession(session){currentUser=session?.user||null;document.body.classList.toggle('authenticated',!!currentUser);$('signOutBtn').style.display=currentUser?'block':'none';$('userEmail').textContent=currentUser?.email||'';if(currentUser){try{await loadRole();subscribe();await loadInventory()}catch(error){console.error('Session initialization failed:',error)}}else{inventory=[];userRole='staff';document.body.classList.remove('is-admin','is-manager');sync('Offline')}document.body.classList.remove('auth-loading');authInitialized=true}
+  async function applySession(session){currentUser=session?.user||null;document.body.classList.toggle('authenticated',!!currentUser);$('signOutBtn').style.display=currentUser?'block':'none';$('userEmail').textContent=currentUser?.email||'';if(currentUser){try{await loadRole();subscribe();await loadInventory();if(invitationPasswordRequired())showInvitePasswordSetup()}catch(error){console.error('Session initialization failed:',error)}}else{inventory=[];userRole='staff';document.body.classList.remove('is-admin','is-manager');sync('Offline')}document.body.classList.remove('auth-loading');authInitialized=true}
   db.auth.onAuthStateChange((event,session)=>{if(!authInitialized||event==='SIGNED_IN'||event==='SIGNED_OUT'||event==='USER_UPDATED')applySession(session)});
   async function initializeAuth(){try{const {data:{session},error}=await db.auth.getSession();if(error)throw error;await applySession(session)}catch(error){console.error('Unable to restore session:',error);showAuthMessage(error?.message||'Unable to restore session. Please sign in again.');await applySession(null)}}
   initializeAuth();
@@ -31,9 +124,27 @@
   function sync(text,error=false){$('syncState').textContent=text;$('syncState').style.color=error?'var(--rust)':'var(--green)'}
   function normalizeBarcode(v){return String(v??'').trim().replace(/\.0$/,'')}
   function sameBarcode(a,b){const x=normalizeBarcode(a),y=normalizeBarcode(b);return x===y||x.replace(/^0+/,'')===y.replace(/^0+/,'')}
-  function fromDb(r){return{id:r.id,barcode:r.barcode,name:r.name,price:r.price==null?null:Number(r.price),cost:r.cost==null?null:Number(r.cost),category:r.category||'',distributor:r.distributor||'',floorQty:r.floor_qty||0,backroomQty:r.backroom_qty||0,backroomCases:r.backroom_cases||0,unitsPerCase:r.units_per_case||0,lowStockThreshold:r.low_stock_threshold||0,lowStockAlertEnabled:r.low_stock_alert_enabled!==false,status:r.status||'in_stock',updatedAt:new Date(r.updated_at).getTime(),updatedBy:r.updated_by}}
+  function fromDb(r){return{id:r.id,barcode:r.barcode,name:r.name,price:r.price==null?null:Number(r.price),cost:r.cost==null?null:Number(r.cost),category:r.category||'',distributor:r.distributor||'',floorQty:r.floor_qty||0,backroomQty:r.backroom_qty||0,backroomCases:r.backroom_cases||0,unitsPerCase:r.units_per_case||0,lowStockThreshold:r.low_stock_threshold||0,lowStockAlertEnabled:r.low_stock_alert_enabled!==false,status:r.status||'in_stock',updatedAt:new Date(r.updated_at).getTime(),updatedBy:r.updated_by,reconciliationVariance:Number(r.reconciliation_variance||0),needsReconciliation:r.needs_reconciliation===true,reconciliationUpdatedAt:r.reconciliation_updated_at}}
   const caseUnits=p=>(p.backroomCases||0)*(p.unitsPerCase||0);
   const totalUnits=p=>(p.floorQty||0)+(p.backroomQty||0)+caseUnits(p);
+  const reconciliationItems=()=>inventory.filter(p=>p.needsReconciliation||Number(p.reconciliationVariance||0)<0);
+  function renderReconciliationBanner(){
+    const banner=$('reconciliationBanner');
+    if(!banner)return;
+    const flagged=reconciliationItems();
+    banner.hidden=!flagged.length;
+    $('reconciliationBannerTitle').textContent=`Inventory reconciliation needed — ${flagged.length} product${flagged.length===1?'':'s'}`;
+    const units=flagged.reduce((sum,p)=>sum+Math.abs(Number(p.reconciliationVariance||0)),0);
+    $('reconciliationBannerText').textContent=`${units} sold unit${units===1?' was':'s were'} not covered by recorded inventory. Sales reports are still complete.`;
+  }
+  $('reconciliationBanner').onclick=()=>{
+    if(canManage()){
+      switchView('admin');
+      const card=$('reconciliationCard');if(card){card.open=true;card.scrollIntoView({behavior:'smooth',block:'start'})}
+    }else{
+      toast('Inventory needs reconciliation. Ask a Manager or Admin to confirm the physical count.');
+    }
+  };
   function switchView(name){if(name==='admin'&&!canManage())name='scan';Object.entries(views).forEach(([k,v])=>v&&v.classList.toggle('active',k===name));navBtns.forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='inventory')renderList();if(name==='export')renderStats();if(name==='admin')renderAdmin();if(name==='profile')loadMyProfile();if(name==='scan')clearScanSearch()}
   navBtns.forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
   function applyRoleUI(){document.body.classList.toggle('is-admin',isAdmin());document.body.classList.toggle('is-manager',isManager());$('roleChip').style.display='inline-block';$('roleChip').textContent=isAdmin()?'ADMIN':isManager()?'MANAGER':'STAFF';$('addCategoryBtn').style.display=canManage()?'block':'none';$('addDistributorBtn').style.display=canManage()?'block':'none'}
@@ -61,7 +172,7 @@
     fillSelect('reportDistributor',distributors,$('reportDistributor')?.value,'All distributors');
     fillSelect('inventoryCategoryFilter',categories,$('inventoryCategoryFilter')?.value,'All categories');
   }
-  async function loadInventory(){if(!currentUser)return;sync('Syncing…');const {data,error}=await db.from('inventory').select('*').order('updated_at',{ascending:false});if(error){sync('Sync failed',true);toast(error.message);return}inventory=(data||[]).map(fromDb);await loadLists();$('headerCount').textContent=`${inventory.length} item${inventory.length===1?'':'s'}`;renderList();renderStats();if(canManage())await renderAdmin();sync('Live')}
+  async function loadInventory(){if(!currentUser)return;sync('Syncing…');const {data,error}=await db.from('inventory').select('*').order('updated_at',{ascending:false});if(error){sync('Sync failed',true);toast(error.message);return}inventory=(data||[]).map(fromDb);await loadLists();$('headerCount').textContent=`${inventory.length} item${inventory.length===1?'':'s'}`;renderList();renderStats();renderReconciliationBanner();if(canManage())await renderAdmin();sync('Live')}
   function subscribe(){if(channel)db.removeChannel(channel);channel=db.channel('inventory-live').on('postgres_changes',{event:'*',schema:'public',table:'inventory'},()=>loadInventory()).subscribe()}
   function findProduct(code){return inventory.find(p=>sameBarcode(p.barcode,code))}
   async function lookupCatalog(code){const exact=normalizeBarcode(code);let {data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').eq('barcode',exact).maybeSingle();if(error)throw error;if(!data){const stripped=exact.replace(/^0+/,'');if(stripped!==exact){({data,error}=await db.from('product_catalog').select('barcode,product_name,price,cost,category,distributor').eq('barcode',stripped).maybeSingle());if(error)throw error}}return data}
@@ -133,6 +244,11 @@
     if(loc==='cases')updates.backroom_cases=quickProduct.backroomCases+sign*qty;
     updates.status=((updates.floor_qty??quickProduct.floorQty)+(updates.backroom_qty??quickProduct.backroomQty)+((updates.backroom_cases??quickProduct.backroomCases)*quickProduct.unitsPerCase)>0)?'in_stock':'out_of_stock';
     updates.updated_by=currentUser.id;updates.updated_at=new Date().toISOString();
+    if(quickProduct.needsReconciliation&&canManage()){
+      updates.reconciliation_variance=0;
+      updates.needs_reconciliation=false;
+      updates.reconciliation_updated_at=new Date().toISOString();
+    }
     const {error}=await db.from('inventory').update(updates).eq('id',quickProduct.id);
     if(error){$('quickAdjustError').textContent=error.message;return;}
     const bottleChange=loc==='cases'?sign*qty*quickProduct.unitsPerCase:sign*qty;
@@ -340,6 +456,14 @@
     const product={barcode:normalizeBarcode($('fieldBarcode').value),name:$('fieldName').value.trim(),price:$('fieldPrice').value===''?null:Math.max(0,+$('fieldPrice').value),cost:$('fieldCost').value===''?null:Math.max(0,+$('fieldCost').value),category:$('fieldCategory').value||null,distributor:$('fieldDistributor').value||null,floor_qty:Math.max(0,+$('fieldFloorQty').value||0),backroom_qty:Math.max(0,+$('fieldBackQty').value||0),backroom_cases:Math.max(0,+$('fieldCases').value||0),units_per_case:Math.max(0,+$('fieldUnitsPerCase').value||0),low_stock_threshold:Math.max(0,+$('fieldLowStock').value||0),low_stock_alert_enabled:$('fieldLowStockEnabled').checked,status:((Math.max(0,+$('fieldFloorQty').value||0)+Math.max(0,+$('fieldBackQty').value||0)+(Math.max(0,+$('fieldCases').value||0)*Math.max(0,+$('fieldUnitsPerCase').value||0)))>0?'in_stock':'out_of_stock'),updated_by:currentUser.id,updated_at:new Date().toISOString()};
     if(!product.barcode||!product.name){toast('Barcode and product name are required');return}
     if(product.backroom_cases>0&&product.units_per_case<=0){toast('Bottles per case is required when unopened cases are entered');$('fieldUnitsPerCase').focus();return}
+    if(currentEditId&&canManage()){
+      const flagged=inventory.find(x=>x.id===currentEditId)?.needsReconciliation;
+      if(flagged){
+        product.reconciliation_variance=0;
+        product.needs_reconciliation=false;
+        product.reconciliation_updated_at=new Date().toISOString();
+      }
+    }
     let error;
     if(currentEditId){
       const oldProduct=inventory.find(x=>x.id===currentEditId);
@@ -429,7 +553,7 @@
     $('inventoryRows').innerHTML=rows.length?rows.map(p=>{
       const total=totalUnits(p);
       const actualStatus=total<=0?'out_of_stock':'in_stock';
-      return `<tr class="inventory-row" data-id="${p.id}">
+      return `<tr class="inventory-row ${p.needsReconciliation?'needs-reconciliation':''}" data-id="${p.id}">
         <td class="product-cell" data-label="Product"><span class="product-name">${esc(p.name)}</span><span class="mobile-product-meta">${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</span></td>
         <td class="barcode-cell" data-label="Barcode">${esc(p.barcode)}</td>
         <td class="category-cell" data-label="Category">${esc(p.category||'Uncategorized')}</td>
@@ -591,45 +715,13 @@
   }
 
 
-  const CLOVER_TEMPLATE_URL='templates/clover-import-template.xlsx';
+  const CLOVER_SANDBOX_TEMPLATE_URL='templates/clover-sandbox-import-template.xlsx';
 
-  function clearSheetDataRows(sheet,headerRow=0){
-    if(!sheet)return;
-    for(const key of Object.keys(sheet)){
-      if(key[0]==='!')continue;
-      const decoded=XLSX.utils.decode_cell(key);
-      if(decoded.r>headerRow)delete sheet[key];
-    }
-  }
+  function buildCloverTemplateData(){
+    const validation=getCloverExportRows();
+    if(!validation)return null;
 
-  function setWorksheetRef(sheet,lastRowZeroBased,lastColZeroBased){
-    sheet['!ref']=XLSX.utils.encode_range({
-      s:{r:0,c:0},
-      e:{r:Math.max(0,lastRowZeroBased),c:Math.max(0,lastColZeroBased)}
-    });
-    if(sheet['!autofilter']){
-      sheet['!autofilter'].ref=sheet['!ref'];
-    }
-  }
-
-  function forceTextColumn(sheet,columnIndex,startRowZeroBased,endRowZeroBased){
-    for(let r=startRowZeroBased;r<=endRowZeroBased;r++){
-      const address=XLSX.utils.encode_cell({r,c:columnIndex});
-      const cell=sheet[address];
-      if(!cell)continue;
-      cell.t='s';
-      cell.v=String(cell.v??'');
-      cell.z='@';
-    }
-  }
-
-  function buildCloverWorkbookData(){
-    const exportData=getCloverExportRows();
-    if(!exportData)return null;
-
-    // Use one clean normalized category value for both Clover relationships.
     const products=inventory.map(p=>({
-      id:p.id,
       name:String(p.name||'').trim(),
       barcode:String(p.barcode??''),
       price:Number(p.price||0),
@@ -638,208 +730,177 @@
       category:String(p.category||'').trim()
     }));
 
-    const categories=[...new Set(
-      products.map(p=>p.category).filter(Boolean)
-    )].sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'}));
+    const categoryMap=new Map();
+    products.forEach(p=>{
+      if(!p.category)return;
+      const key=p.category.toLocaleLowerCase();
+      if(!categoryMap.has(key)){
+        categoryMap.set(key,{name:p.category,items:[]});
+      }
+      categoryMap.get(key).items.push(p.name);
+    });
+
+    const categories=[...categoryMap.values()]
+      .sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+
+    categories.forEach(c=>{
+      c.items.sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'}));
+    });
 
     return {products,categories};
   }
 
-  async function exportCloverImportWorkbook(){
-    const data=buildCloverWorkbookData();
+  function clearTemplateRows(sheet,startRowZeroBased){
+    if(!sheet)return;
+    for(const key of Object.keys(sheet)){
+      if(key[0]==='!')continue;
+      const cell=XLSX.utils.decode_cell(key);
+      if(cell.r>=startRowZeroBased)delete sheet[key];
+    }
+  }
+
+  function setTemplateRef(sheet,lastRowZeroBased,lastColZeroBased){
+    sheet['!ref']=XLSX.utils.encode_range({
+      s:{r:0,c:0},
+      e:{r:Math.max(0,lastRowZeroBased),c:Math.max(0,lastColZeroBased)}
+    });
+  }
+
+  function forceTemplateText(sheet,columnIndex,startRowZeroBased,endRowZeroBased){
+    for(let r=startRowZeroBased;r<=endRowZeroBased;r++){
+      const addr=XLSX.utils.encode_cell({r,c:columnIndex});
+      const cell=sheet[addr];
+      if(!cell)continue;
+      cell.t='s';
+      cell.v=String(cell.v??'');
+      cell.z='@';
+    }
+  }
+
+  async function loadCloverTemplate(url){
+    const response=await fetch(url,{cache:'no-store'});
+    if(!response.ok)throw new Error(`Could not load Clover template (${response.status}).`);
+    const buffer=await response.arrayBuffer();
+    return XLSX.read(buffer,{type:'array',cellStyles:true,cellDates:true});
+  }
+
+  function writeSandboxWorkbook(wb,data){
+    const required=['Items','Modifier Groups','Categories','Tax Rates'];
+    const missing=required.filter(n=>!wb.Sheets[n]);
+    if(missing.length)throw new Error(`Sandbox template missing: ${missing.join(', ')}`);
+
+    // ITEMS — sandbox template has 15 columns A:O.
+    const items=wb.Sheets['Items'];
+    clearTemplateRows(items,1);
+
+    const itemRows=data.products.map(p=>[
+      '',              // Clover ID
+      p.name,          // Name
+      '',              // Alternate Name
+      p.price,         // Price
+      'Fixed',         // Price Type
+      '',              // Price Unit
+      'DEFAULT',       // Tax Rates
+      p.cost,          // Cost
+      p.barcode,       // Product Code
+      '',              // SKU
+      p.category,      // Modifier Groups
+      p.quantity,      // Quantity
+      '',              // Printer Labels
+      'No',            // Hidden
+      'No'             // Non-revenue item
+    ]);
+
+    if(itemRows.length)XLSX.utils.sheet_add_aoa(items,itemRows,{origin:'A2'});
+    setTemplateRef(items,itemRows.length,14);
+
+    // Product Code must remain text so UPC leading zeroes are never lost.
+    forceTemplateText(items,8,1,itemRows.length);
+    [0,1,2,4,5,6,9,10,12,13,14].forEach(c=>forceTemplateText(items,c,1,itemRows.length));
+
+    for(let r=1;r<=itemRows.length;r++){
+      [3,7].forEach(c=>{
+        const a=XLSX.utils.encode_cell({r,c});
+        if(items[a]){
+          items[a].t='n';
+          items[a].v=Number(items[a].v||0);
+          items[a].z='0.00';
+        }
+      });
+      const q=XLSX.utils.encode_cell({r,c:11});
+      if(items[q]){
+        items[q].t='n';
+        items[q].v=Number(items[q].v||0);
+        items[q].z='0';
+      }
+    }
+
+    // MODIFIER GROUPS — one row per unique TC's Liquor category.
+    const modifiers=wb.Sheets['Modifier Groups'];
+    clearTemplateRows(modifiers,1);
+    const modifierRows=data.categories.map(c=>[
+      c.name,   // Modifier Group Name
+      'No',     // Pop-up Automatically
+      '',       // Modifier
+      '',       // Price
+      '',       // Required Quantity
+      ''        // Max Quantity
+    ]);
+    if(modifierRows.length)XLSX.utils.sheet_add_aoa(modifiers,modifierRows,{origin:'A2'});
+    setTemplateRef(modifiers,modifierRows.length,5);
+    for(let c=0;c<=5;c++)forceTemplateText(modifiers,c,1,modifierRows.length);
+
+    // CATEGORIES — sandbox template is horizontal:
+    // Row 1: Category Name | Vodka | Bourbon | Beer...
+    // Row 2+: Items in Category | item names under their category column.
+    const categories=wb.Sheets['Categories'];
+    for(const key of Object.keys(categories)){
+      if(key[0]==='!')continue;
+      delete categories[key];
+    }
+
+    const maxItems=Math.max(1,...data.categories.map(c=>c.items.length));
+    const matrix=Array.from({length:maxItems+1},()=>Array(data.categories.length+1).fill(''));
+    matrix[0][0]='Category Name';
+    matrix[1][0]='Items in Category';
+
+    data.categories.forEach((category,i)=>{
+      matrix[0][i+1]=category.name;
+      category.items.forEach((name,itemIndex)=>{
+        matrix[itemIndex+1][i+1]=name;
+      });
+    });
+
+    XLSX.utils.sheet_add_aoa(categories,matrix,{origin:'A1'});
+    setTemplateRef(categories,matrix.length-1,data.categories.length);
+    for(let c=0;c<=data.categories.length;c++){
+      forceTemplateText(categories,c,0,matrix.length-1);
+    }
+
+    // Tax Rates is deliberately preserved exactly from the Clover sandbox template.
+  }
+
+  async function exportCloverSandboxWorkbook(){
+    const data=buildCloverTemplateData();
     if(!data)return;
-
-    const button=$('exportCloverWorkbookBtn');
-    if(button){
-      button.disabled=true;
-      button.textContent='Building workbook…';
-    }
-
+    const btn=$('exportCloverSandboxBtn');
+    const originalText=btn?.textContent||'Download Sandbox Import Workbook';
+    if(btn){btn.disabled=true;btn.textContent='Building workbook…'}
     try{
-      const response=await fetch(CLOVER_TEMPLATE_URL,{cache:'no-store'});
-      if(!response.ok){
-        throw new Error(`Clover template could not be loaded (${response.status}).`);
-      }
-
-      const templateBuffer=await response.arrayBuffer();
-      const workbook=XLSX.read(templateBuffer,{
-        type:'array',
-        cellStyles:true,
-        cellDates:true
-      });
-
-      const requiredSheets=[
-        'Instructions & Glossary',
-        'Items',
-        'Modifier Groups',
-        'Categories',
-        'Tax Rates'
-      ];
-
-      const missing=requiredSheets.filter(name=>!workbook.Sheets[name]);
-      if(missing.length){
-        throw new Error(`Clover template is missing: ${missing.join(', ')}`);
-      }
-
-      // ---------------------------------------------------------
-      // ITEMS
-      // ---------------------------------------------------------
-      const itemsSheet=workbook.Sheets['Items'];
-      clearSheetDataRows(itemsSheet,0);
-
-      const itemRows=data.products.map(p=>[
-        '',                    // Clover ID
-        p.name,                // Name
-        '',                    // Alternate Name
-        '',                    // Description
-        p.price,               // Price
-        'Fixed',               // Price Type
-        '',                    // Price Unit
-        p.cost,                // Cost
-        p.barcode,             // Product Code - EXACT STRING
-        '',                    // SKU
-        p.quantity,            // Quantity
-        'No',                  // Hidden?
-        'Yes',                 // Default tax rates?
-        'No',                  // Non-revenue item?
-        p.name,                // Printer Labels
-        p.category,            // Modifier Groups
-        p.category,            // Categories
-        '',                    // Tax Rates (use Clover default)
-        '',                    // Variant Attribute
-        ''                     // Variant Option
-      ]);
-
-      if(itemRows.length){
-        XLSX.utils.sheet_add_aoa(itemsSheet,itemRows,{origin:'A2'});
-      }
-      setWorksheetRef(itemsSheet,itemRows.length,19);
-
-      // Product Code must always be text: never scientific notation,
-      // never stripping a leading zero.
-      forceTextColumn(itemsSheet,8,1,itemRows.length);
-
-      // Also force IDs / SKU / relationship text columns as strings.
-      [0,1,2,3,4,5,6,7,9,11,12,13,14,15,16,17,18,19].forEach(col=>{
-        if([4,7].includes(col))return;
-        forceTextColumn(itemsSheet,col,1,itemRows.length);
-      });
-
-      // Price and Cost numeric formatting.
-      for(let r=1;r<=itemRows.length;r++){
-        [4,7].forEach(c=>{
-          const addr=XLSX.utils.encode_cell({r,c});
-          if(itemsSheet[addr]){
-            itemsSheet[addr].t='n';
-            itemsSheet[addr].v=Number(itemsSheet[addr].v||0);
-            itemsSheet[addr].z='0.00';
-          }
-        });
-        const qtyAddr=XLSX.utils.encode_cell({r,c:10});
-        if(itemsSheet[qtyAddr]){
-          itemsSheet[qtyAddr].t='n';
-          itemsSheet[qtyAddr].v=Number(itemsSheet[qtyAddr].v||0);
-          itemsSheet[qtyAddr].z='0';
-        }
-      }
-
-      // ---------------------------------------------------------
-      // MODIFIER GROUPS
-      // One unique TC's Liquor category = one Clover Modifier Group.
-      // ---------------------------------------------------------
-      const modifierSheet=workbook.Sheets['Modifier Groups'];
-      clearSheetDataRows(modifierSheet,0);
-
-      const modifierRows=data.categories.map(category=>[
-        '',        // Modifier Group ID
-        category,  // Modifier Group Name
-        'No',      // Pop up Automatically?
-        '',        // Modifier
-        '',        // Price
-        '',        // Required Quantity
-        ''         // Max Quantity
-      ]);
-
-      if(modifierRows.length){
-        XLSX.utils.sheet_add_aoa(modifierSheet,modifierRows,{origin:'A2'});
-      }
-      setWorksheetRef(modifierSheet,modifierRows.length,6);
-      for(let c=0;c<=6;c++)forceTextColumn(modifierSheet,c,1,modifierRows.length);
-
-      // ---------------------------------------------------------
-      // CATEGORIES
-      // Clover's category export groups item names underneath the category.
-      // Example:
-      //   Bourbon | Maker's Mark
-      //           | Woodford Reserve
-      // ---------------------------------------------------------
-      const categorySheet=workbook.Sheets['Categories'];
-      clearSheetDataRows(categorySheet,0);
-
-      const categoryRows=[];
-      data.categories.forEach(category=>{
-        const names=data.products
-          .filter(p=>p.category===category)
-          .map(p=>p.name)
-          .sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'}));
-
-        if(!names.length){
-          categoryRows.push(['',category,'','']);
-          return;
-        }
-
-        names.forEach((name,index)=>{
-          categoryRows.push([
-            '',                      // Category ID
-            index===0?category:'',   // Category Name on first row only
-            '',                      // Subcategory Name
-            name                     // Item Sort Order
-          ]);
-        });
-      });
-
-      if(categoryRows.length){
-        XLSX.utils.sheet_add_aoa(categorySheet,categoryRows,{origin:'A2'});
-      }
-      setWorksheetRef(categorySheet,categoryRows.length,3);
-      for(let c=0;c<=3;c++)forceTextColumn(categorySheet,c,1,categoryRows.length);
-
-      // Instructions & Glossary and Tax Rates are intentionally NOT changed.
-      // They come from the sanitized Clover v2 template.
-
-      XLSX.writeFile(
-        workbook,
-        `clover-import-workbook-${new Date().toISOString().slice(0,10)}.xlsx`,
-        {cellStyles:true,compression:true}
-      );
-
-      const note=$('cloverExportNote');
-      if(note){
-        note.textContent=`Built Clover v2 workbook with ${data.products.length} items and ${data.categories.length} unique categories. Category is written to both Modifier Groups and Categories.`;
-      }
-      toast('Clover import workbook downloaded');
+      const wb=await loadCloverTemplate(CLOVER_SANDBOX_TEMPLATE_URL);
+      writeSandboxWorkbook(wb,data);
+      XLSX.writeFile(wb,`clover-sandbox-inventory-${new Date().toISOString().slice(0,10)}.xlsx`,
+        {compression:true,bookSST:true,cellStyles:true});
+      if($('cloverExportNote'))$('cloverExportNote').textContent=
+        `Sandbox workbook created: ${data.products.length} items, ${data.categories.length} categories.`;
+      toast('Sandbox Clover workbook downloaded');
     }catch(error){
-      console.error(error);
-      toast(error?.message||'Could not build Clover import workbook');
-      const note=$('cloverExportNote');
-      if(note)note.textContent=error?.message||'Could not build Clover import workbook.';
+      console.error(error); toast(error?.message||'Could not build Clover sandbox workbook');
     }finally{
-      if(button){
-        button.disabled=false;
-        button.textContent='Download Clover Import Workbook';
-      }
+      if(btn){btn.disabled=false;btn.textContent=originalText}
     }
   }
-
-  if($('exportCloverCsvBtn')){
-    $('exportCloverCsvBtn').onclick=exportCloverInventoryCsv;
-  }
-  if($('exportCloverXlsxBtn')){
-    $('exportCloverXlsxBtn').onclick=exportCloverInventoryXlsx;
-  }
-  if($('exportCloverWorkbookBtn')){
-    $('exportCloverWorkbookBtn').onclick=exportCloverImportWorkbook;
-  }
+  if($('exportCloverSandboxBtn'))$('exportCloverSandboxBtn').onclick=exportCloverSandboxWorkbook;
 
   function usageCount(kind,name){
     const inv=inventory.filter(p=>(kind==='category'?p.category:p.distributor)===name).length;
@@ -919,8 +980,11 @@
       const id=btn.closest('.user-row').dataset.userId,u=adminUsers.find(x=>x.id===id);if(!u)return;
       const label=u.full_name||u.name||u.email||'this user';
       if(!confirm(`Permanently remove ${label}? This cannot be undone.`))return;
-      const {error}=await db.rpc('admin_delete_user',{p_user_id:id});
-      if(error){toast(error.message);return}toast('User removed');await loadAdminUsers();
+      const {data,error}=await db.functions.invoke('admin-delete-user',{body:{user_id:id}});
+      if(error){toast(error.message||'Unable to delete user');return}
+      if(!data?.ok){toast(data?.error||'Unable to delete user');return}
+      toast('User removed');
+      await Promise.all([loadAdminUsers(),loadAccessRequests()]);
     });
   }
   function syncHistoryUserFilter(){
@@ -1386,6 +1450,10 @@
     $('cloverEnvironment').textContent=(connection?.environment||'sandbox').replace(/^./,c=>c.toUpperCase());
     $('cloverLastVerified').textContent=formatCloverDate(connection?.last_verified_at||connection?.updated_at);
     $('cloverTestBtn').disabled=!connected;
+    if($('cloverSyncSalesBtn'))$('cloverSyncSalesBtn').disabled=!connected;
+    if($('cloverCreateTestSaleBtn'))$('cloverCreateTestSaleBtn').disabled=!connected;
+    populateCloverTestSaleProducts();
+    if(connected)loadCloverSalesStatus();
     $('cloverConnectBtn').textContent=connected?'Reconnect Clover sandbox':'Connect Clover sandbox';
   }
   async function loadCloverStatus(showMessage=false){
@@ -1432,7 +1500,162 @@
     window.location.assign(url.toString());
   }
 
-  async function renderAdmin(){if(!canManage())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');if(!isAdmin())return;await loadAdminUsers();const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));if($('lowStockAlertsSummary'))$('lowStockAlertsSummary').textContent=`Low-stock alerts (${low.length})`;$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));await loadCloverStatus(false);await loadAnalytics();initializeHistoryDates();await loadHistory()}
+
+  function populateCloverTestSaleProducts(){
+    const el=$('cloverTestSaleProduct'); if(!el)return;
+    el.innerHTML='<option value="">Choose a product…</option>'+
+      [...inventory].filter(p=>p.barcode&&p.name).sort((a,b)=>a.name.localeCompare(b.name))
+      .map(p=>`<option value="${esc(p.barcode)}">${esc(p.name)} — ${esc(p.barcode)} (${totalUnits(p)} on hand)</option>`).join('');
+  }
+  async function loadCloverSalesStatus(){
+    if(!isAdmin()||!cloverConnection?.connected)return;
+    const {data,error}=await db.functions.invoke('clover-sales-sync',{body:{action:'status'}});
+    if(error||!data?.ok)return;
+    const s=data.status||{};
+    $('cloverSalesLastSync').textContent=s.last_sync_at?new Date(s.last_sync_at).toLocaleString():'Never';
+    $('cloverSalesProcessed').textContent=s.processed||0;
+    $('cloverSalesUnmatched').textContent=s.unmatched||0;
+    $('cloverSalesDuplicates').textContent=s.duplicates||0;
+  }
+  async function syncCloverSales(){
+    const btn=$('cloverSyncSalesBtn'); btn.disabled=true; btn.textContent='Syncing…';
+    try{
+      const {data,error}=await db.functions.invoke('clover-sales-sync',{body:{action:'sync'}});
+      if(error)throw error;if(!data?.ok)throw new Error(data?.error||'Sync failed');
+      const s=data.summary||{};
+      $('cloverSalesSyncStatus').textContent=`Processed ${s.processed||0} · duplicates ${s.duplicates||0} · unmatched ${s.unmatched||0}`;
+      await loadInventory(); await loadCloverSalesStatus(); toast('Sandbox sales synced');
+    }catch(e){$('cloverSalesSyncStatus').textContent=e.message||'Sync failed';toast(e.message||'Sync failed')}
+    finally{btn.disabled=!cloverConnection?.connected;btn.textContent='Sync sandbox sales now'}
+  }
+  async function createCloverSandboxTestSale(){
+    const barcode=$('cloverTestSaleProduct').value;
+    const quantity=Math.max(1,Math.min(25,Number($('cloverTestSaleQty').value||1)));
+    if(!barcode)return toast('Choose a product');
+    const btn=$('cloverCreateTestSaleBtn');btn.disabled=true;btn.textContent='Creating…';
+    try{
+      const {data,error}=await db.functions.invoke('clover-test-sale',{body:{barcode,quantity}});
+      if(error)throw error;if(!data?.ok)throw new Error(data?.error||'Test sale failed');
+      $('cloverTestSaleStatus').textContent=`${data.sale.product_name} × ${quantity} created. Order ${data.sale.order_id}.`;
+      toast('Sandbox test sale created'); await syncCloverSales();
+    }catch(e){$('cloverTestSaleStatus').textContent=e.message||'Test sale failed';toast(e.message||'Test sale failed')}
+    finally{btn.disabled=!cloverConnection?.connected;btn.textContent='Create sandbox test sale'}
+  }
+
+  let accessRequests=[];
+
+  function renderAccessRequests(){
+    const list=$('accessRequestList');
+    if(!list)return;
+    const pending=accessRequests.filter(r=>r.status==='pending');
+    $('accessRequestCount').textContent=pending.length;
+    list.innerHTML=pending.length?pending.map(r=>`
+      <div class="access-request-row" data-request-id="${r.id}">
+        <div class="access-request-person">
+          <strong>${esc(r.full_name)}</strong>
+          <small>${esc(r.email)}</small>
+          <small>Requested ${r.created_at?new Date(r.created_at).toLocaleString():'—'}</small>
+        </div>
+        <div class="request-status pending">Pending</div>
+        <div class="access-request-actions">
+          <button class="mini-btn request-approve" type="button">Approve & invite</button>
+          <button class="mini-btn danger request-deny" type="button">Deny</button>
+        </div>
+      </div>`).join(''):'<div class="small-note">No pending access requests.</div>';
+
+    list.querySelectorAll('.request-approve').forEach(btn=>btn.onclick=async()=>{
+      const row=btn.closest('.access-request-row');
+      const id=row.dataset.requestId;
+      const request=accessRequests.find(r=>r.id===id);
+      if(!request)return;
+      if(!confirm(`Approve ${request.full_name} (${request.email}) and send an invitation?`))return;
+      btn.disabled=true;btn.textContent='Inviting…';
+      try{
+        const redirectTo=window.location.origin+window.location.pathname+'?invited=1';
+        const {data,error}=await db.functions.invoke('admin-invite-user',{body:{request_id:id,redirect_to:redirectTo}});
+        if(error)throw error;
+        if(!data?.ok)throw new Error(data?.error||'Unable to send invitation.');
+        toast('Applicant approved. Invitation email sent.');
+        await Promise.all([loadAccessRequests(),loadAdminUsers()]);
+      }catch(error){
+        toast(error?.message||'Unable to approve applicant');
+      }finally{
+        btn.disabled=false;btn.textContent='Approve & invite';
+      }
+    });
+
+    list.querySelectorAll('.request-deny').forEach(btn=>btn.onclick=async()=>{
+      const id=btn.closest('.access-request-row').dataset.requestId;
+      const request=accessRequests.find(r=>r.id===id);
+      if(!request||!confirm(`Deny access for ${request.full_name} (${request.email})?`))return;
+      btn.disabled=true;
+      const {data,error}=await db.rpc('admin_review_access_request',{p_request_id:id,p_decision:'denied'});
+      btn.disabled=false;
+      if(error)return toast(error.message);
+      toast('Access request denied.');
+      await loadAccessRequests();
+    });
+  }
+
+  async function loadAccessRequests(){
+    if(!isAdmin())return;
+    const {data,error}=await db.rpc('admin_list_access_requests');
+    if(error){
+      $('accessRequestList').innerHTML=`<div class="small-note">Access request setup is not ready.<br>${esc(error.message)}</div>`;
+      return;
+    }
+    accessRequests=data||[];
+    renderAccessRequests();
+  }
+  if($('refreshAccessRequests'))$('refreshAccessRequests').onclick=loadAccessRequests;
+
+  function renderReconciliation(){
+    const list=$('reconciliationList');
+    if(!list)return;
+    const flagged=reconciliationItems()
+      .sort((a,b)=>Math.abs(Number(b.reconciliationVariance||0))-Math.abs(Number(a.reconciliationVariance||0)));
+    $('reconciliationSummary').textContent=`Inventory reconciliation (${flagged.length})`;
+    list.innerHTML=flagged.length?flagged.map(p=>{
+      const variance=Number(p.reconciliationVariance||0);
+      return `<div class="reconciliation-row" data-reconcile-id="${p.id}">
+        <div class="reconciliation-product">
+          <strong>${esc(p.name)}</strong>
+          <small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small>
+          <span class="reconciliation-variance">Inventory shortage detected: ${Math.abs(variance)} unit${Math.abs(variance)===1?'':'s'} · Current recorded inventory: ${totalUnits(p)}</span>
+        </div>
+        <div class="reconciliation-entry">
+          <label>Physical total</label>
+          <input class="reconcile-count" type="number" min="0" step="1" value="${totalUnits(p)}">
+        </div>
+        <div class="reconciliation-actions">
+          <button class="mini-btn reconcile-confirm" type="button">Confirm count</button>
+          <button class="mini-btn alert-open" data-reconcile-open="${p.id}" type="button">Open product</button>
+        </div>
+      </div>`;
+    }).join(''):'<div class="small-note">No inventory reconciliation is currently required.</div>';
+
+    list.querySelectorAll('.reconcile-confirm').forEach(btn=>btn.onclick=async()=>{
+      const row=btn.closest('.reconciliation-row');
+      const id=row.dataset.reconcileId;
+      const product=inventory.find(p=>p.id===id);
+      const physical=Number(row.querySelector('.reconcile-count').value);
+      if(!product||!Number.isFinite(physical)||physical<0||!Number.isInteger(physical))return toast('Enter a whole-number physical count.');
+      if(!confirm(`Set ${product.name} current inventory to ${physical} and clear the reconciliation variance?`))return;
+      btn.disabled=true;btn.textContent='Saving…';
+      const {data,error}=await db.rpc('reconcile_inventory_total',{p_inventory_id:id,p_physical_total:physical});
+      btn.disabled=false;btn.textContent='Confirm count';
+      if(error){console.error('Reconciliation failed:',error);return toast(`Reconciliation failed: ${error.message}`);}
+      await loadInventory();
+      toast(`${product.name} inventory set to ${physical}; reconciliation cleared.`);
+    });
+
+    list.querySelectorAll('[data-reconcile-open]').forEach(btn=>btn.onclick=()=>{
+      const product=inventory.find(p=>p.id===btn.dataset.reconcileOpen);
+      if(product)openPanel(product);
+    });
+  }
+
+  async function renderAdmin(){if(!canManage())return;const s=stats();$('dashProducts').textContent=s.products;$('dashUnits').textContent=s.units;$('dashRetail').textContent=money.format(s.retail);$('dashCost').textContent=money.format(s.cost);$('dashProfit').textContent=money.format(s.retail-s.cost);renderManager('category');renderManager('distributor');renderReconciliation();if(!isAdmin())return;await Promise.all([loadAdminUsers(),loadAccessRequests()]);const low=inventory.filter(p=>p.lowStockAlertEnabled&&p.lowStockThreshold>0&&totalUnits(p)<=p.lowStockThreshold).sort((a,b)=>(b.lowStockThreshold-totalUnits(b))-(a.lowStockThreshold-totalUnits(a)));if($('lowStockAlertsSummary'))$('lowStockAlertsSummary').textContent=`Low-stock alerts (${low.length})`;$('lowStockList').innerHTML=low.length?low.map(p=>{const current=totalUnits(p),needed=Math.max(0,p.lowStockThreshold-current);return`<div class="alert-item"><div class="alert-name">${esc(p.name)}<small>${esc(p.barcode)}${p.category?' · '+esc(p.category):''}</small></div><div class="alert-stock"><strong>${current} / ${p.lowStockThreshold}</strong><small>Current / threshold</small></div><div class="alert-short">Need ${needed} more</div><div class="alert-extra">${esc(p.distributor||'No distributor')}</div><button class="mini-btn alert-open" data-low-id="${p.id}">Open</button></div>`}).join(''):'<div class="small-note">No low-stock products.</div>';document.querySelectorAll('[data-low-id]').forEach(b=>b.onclick=()=>openPanel(inventory.find(p=>p.id===b.dataset.lowId)));await loadCloverStatus(false);await loadAnalytics();initializeHistoryDates();await loadHistory()}
   $('adminAddCategory').onclick=async()=>{await addList('category',$('adminCategoryName').value);$('adminCategoryName').value='';if(canManage())renderAdmin()};$('adminAddDistributor').onclick=async()=>{await addList('distributor',$('adminDistributorName').value);$('adminDistributorName').value='';if(canManage())renderAdmin()};
   $('catalogImportBtn').onclick=async()=>{if(!canManage())return;const file=$('catalogFile').files[0];if(!file){toast('Choose a Clover Excel file');return}$('catalogImportStatus').textContent='Reading workbook…';try{const buf=await file.arrayBuffer(),book=XLSX.read(buf),sheet=book.Sheets['Items']||book.Sheets[book.SheetNames[0]],rows=XLSX.utils.sheet_to_json(sheet,{defval:''}),valid=new Map();for(const r of rows){const barcode=normalizeBarcode(r['Product Code']),price=Number(r['Price']);if(!barcode||!Number.isFinite(price)||price<0.99||String(r['Hidden']).toLowerCase()==='yes')continue;valid.set(barcode,{barcode,product_name:String(r['Name']||'').trim(),price,cost:Number(r['Cost'])||0,category:String(r['Modifier Groups']||'').trim()||null,distributor:null,updated_at:new Date().toISOString()})}const all=[...valid.values()],chunk=400;for(let i=0;i<all.length;i+=chunk){$('catalogImportStatus').textContent=`Importing ${Math.min(i+chunk,all.length)} of ${all.length}…`;const {error}=await db.from('product_catalog').upsert(all.slice(i,i+chunk),{onConflict:'barcode'});if(error)throw error}const cats=[...new Set(all.map(x=>x.category).filter(Boolean))].map(name=>({name,created_by:currentUser.id}));if(cats.length)await db.from('categories').upsert(cats,{onConflict:'name'});$('catalogImportStatus').textContent=`Imported or updated ${all.length} catalog products. Live inventory was not overwritten.`;await loadLists()}catch(e){$('catalogImportStatus').textContent=`Import failed: ${e.message}`}};
   $('camBtn').onclick=()=>camRunning?stopCamera():startCamera();function startCamera(){$('reader').style.display='block';html5QrCode=new Html5Qrcode('reader');html5QrCode.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:140}},t=>{stopCamera();handleScan(t)},()=>{}).then(()=>{camRunning=true;$('camBtn').textContent='Turn off'}).catch(e=>{$('camMsg').style.display='block';$('camMsg').textContent='Camera unavailable. Use the scanner input instead.'})}function stopCamera(){if(html5QrCode&&camRunning)html5QrCode.stop().then(()=>{html5QrCode.clear();$('reader').style.display='none';$('camBtn').textContent='Turn on';camRunning=false})}
@@ -1441,6 +1664,8 @@
   if($('cloverConnectBtn'))$('cloverConnectBtn').addEventListener('click',startCloverConnect);
   if($('cloverTestBtn'))$('cloverTestBtn').addEventListener('click',testCloverConnection);
   if($('cloverRefreshBtn'))$('cloverRefreshBtn').addEventListener('click',()=>loadCloverStatus(true));
+  if($('cloverSyncSalesBtn'))$('cloverSyncSalesBtn').addEventListener('click',syncCloverSales);
+  if($('cloverCreateTestSaleBtn'))$('cloverCreateTestSaleBtn').addEventListener('click',createCloverSandboxTestSale);
   const cloverResult=new URLSearchParams(window.location.search).get('clover');
   if(cloverResult){
     window.history.replaceState({},document.title,window.location.pathname+window.location.hash);

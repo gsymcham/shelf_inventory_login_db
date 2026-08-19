@@ -14,9 +14,3 @@ verify_jwt = false
 
 [functions.clover-test-sale]
 verify_jwt = false
-
-[functions.admin-invite-user]
-verify_jwt = false
-
-[functions.admin-delete-user]
-verify_jwt = false

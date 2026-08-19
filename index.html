@@ -10,17 +10,16 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="css/styles.css">
-<link rel="icon" type="img" href="apple-touch-icon.png">
 </head>
 <body class="auth-loading">
 
   <div class="auth-overlay" id="authOverlay">
     <div class="auth-card">
       <h2>TC's Liquor</h2>
-      <p>Sign in to access the shared inventory. Every authorized user sees the same products and quantities.</p>
+      <p id="authIntro">Sign in to access TC's Liquor inventory. New users must request access and be approved by an Admin.</p>
       <div class="auth-tabs">
         <button class="btn btn-ink" id="authSignInTab" type="button">Sign in</button>
-        <button class="btn btn-line" id="authSignUpTab" type="button">Create account</button>
+        <button class="btn btn-line" id="authSignUpTab" type="button">Request access</button>
       </div>
       <div class="field auth-name" id="authNameWrap">
         <label>Full name</label>
@@ -30,9 +29,9 @@
         <label>Email</label>
         <input type="email" id="authEmail" autocomplete="email" placeholder="you@example.com">
       </div>
-      <div class="field">
+      <div class="field" id="authPasswordWrap">
         <label>Password</label>
-        <input type="password" id="authPassword" autocomplete="current-password" placeholder="At least 6 characters">
+        <input type="password" id="authPassword" autocomplete="current-password" placeholder="Enter your password">
       </div>
       <div class="field auth-confirm" id="authConfirmWrap">
         <label>Verify password</label>
@@ -40,6 +39,24 @@
       </div>
       <div class="auth-error" id="authError" role="status" aria-live="polite"></div>
       <button class="btn btn-amber btn-block" id="authSubmit" type="button">Sign in</button>
+    </div>
+  </div>
+
+  <div class="password-setup-overlay" id="passwordSetupOverlay" aria-hidden="true">
+    <div class="auth-card password-setup-card">
+      <div class="eyebrow">ACCOUNT APPROVED</div>
+      <h2>Create your password</h2>
+      <p>Your access request was approved. Create your private TC's Liquor password to finish activating your account.</p>
+      <div class="field">
+        <label>New password</label>
+        <input type="password" id="invitePassword" autocomplete="new-password" placeholder="At least 8 characters">
+      </div>
+      <div class="field">
+        <label>Confirm password</label>
+        <input type="password" id="inviteConfirmPassword" autocomplete="new-password" placeholder="Enter it again">
+      </div>
+      <div class="auth-error" id="invitePasswordMessage" role="status" aria-live="polite"></div>
+      <button class="btn btn-amber btn-block" id="inviteSetPasswordBtn" type="button">Create password</button>
     </div>
   </div>
 
@@ -57,6 +74,15 @@
       <button class="btn btn-line btn-sm" id="signOutBtn" style="display:none;">Sign out</button>
     </div>
   </header>
+
+  <button class="reconciliation-banner" id="reconciliationBanner" type="button" hidden>
+    <span class="reconciliation-icon">!</span>
+    <span class="reconciliation-banner-copy">
+      <strong id="reconciliationBannerTitle">Inventory reconciliation needed</strong>
+      <small id="reconciliationBannerText">Recorded inventory did not cover one or more Clover sales.</small>
+    </span>
+    <span class="reconciliation-banner-action">Review</span>
+  </button>
 
   <main>
     <!-- SCAN VIEW -->
@@ -187,12 +213,10 @@
         <div class="clover-export-box">
           <div>
             <h3>Export current inventory for Clover</h3>
-            <p>Creates simple Clover CSV/XLSX files for review, or a full Clover v2 import workbook with all 5 required sheets. Clover ID is intentionally left blank so you can review the file before importing it into Clover.</p>
+            <p>Sandbox development only. Generates inventory using the exact Clover sandbox template.</p>
           </div>
-          <div class="clover-export-actions clover-export-actions-three">
-            <button class="btn btn-line" id="exportCloverCsvBtn" type="button">Download Clover CSV</button>
-            <button class="btn btn-line" id="exportCloverXlsxBtn" type="button">Download Clover XLSX</button>
-            <button class="btn btn-amber" id="exportCloverWorkbookBtn" type="button">Download Clover Import Workbook</button>
+          <div class="clover-export-actions">
+            <button class="btn btn-line" id="exportCloverSandboxBtn" type="button">Download Sandbox Import Workbook</button>
           </div>
           <div class="small-note" id="cloverExportNote">Quantity = On Floor + Back Room (Open) + (Cases × Bottles per Case).</div>
         </div>
@@ -275,6 +299,26 @@
             <button class="btn btn-line" id="cloverRefreshBtn" type="button">Refresh status</button>
           </div>
           <div class="profile-message" id="cloverMessage" role="status" aria-live="polite"></div>
+          <div class="clover-sales-grid">
+            <div class="clover-tool-card">
+              <h3>Sandbox test sale</h3>
+              <label>Product<select id="cloverTestSaleProduct"><option value="">Choose a product…</option></select></label>
+              <label>Quantity<input id="cloverTestSaleQty" type="number" min="1" max="25" value="1"></label>
+              <button class="btn btn-line" id="cloverCreateTestSaleBtn" type="button" disabled>Create sandbox test sale</button>
+              <p class="small-note" id="cloverTestSaleStatus">Connect Clover sandbox first.</p>
+            </div>
+            <div class="clover-tool-card">
+              <h3>Sandbox sales sync</h3>
+              <div class="clover-sync-stats">
+                <div>Last sync <strong id="cloverSalesLastSync">Never</strong></div>
+                <div>Processed <strong id="cloverSalesProcessed">0</strong></div>
+                <div>Unmatched <strong id="cloverSalesUnmatched">0</strong></div>
+                <div>Duplicates <strong id="cloverSalesDuplicates">0</strong></div>
+              </div>
+              <button class="btn btn-amber" id="cloverSyncSalesBtn" type="button" disabled>Sync sandbox sales now</button>
+              <p class="small-note" id="cloverSalesSyncStatus">Connect Clover sandbox first.</p>
+            </div>
+          </div>
           <p class="small-note">Clover secrets and OAuth tokens stay in Supabase Edge Functions. They are never placed in this page, <code>app.js</code>, local storage, or GitHub.</p>
         </div>
       </details>
@@ -308,11 +352,29 @@
       <details class="admin-card collapse-card admin-sensitive">
         <summary>Users &amp; roles</summary>
         <div class="collapse-body">
-          <p>Manage users, edit names, and change Staff/Manager/Admin roles. Your own role is protected.</p>
+          <p>Manage approved users and review new access requests. Approved applicants receive an email invitation and create their own password.</p>
+          <div class="access-request-section">
+            <div class="section-mini-heading">
+              <div>
+                <h3>Access requests <span class="count-pill" id="accessRequestCount">0</span></h3>
+                <p>Only Admin can approve or deny applicants. Approved accounts start as Staff.</p>
+              </div>
+              <button class="mini-btn" id="refreshAccessRequests" type="button">Refresh</button>
+            </div>
+            <div class="access-request-list" id="accessRequestList"><div class="small-note">Loading requests…</div></div>
+          </div>
           <div class="user-toolbar">
             <input id="adminUserSearch" type="search" placeholder="Search users by name or email…" autocomplete="off">
           </div>
           <div class="user-list" id="adminUserList"><div class="small-note">Loading users…</div></div>
+        </div>
+      </details>
+
+      <details class="admin-card collapse-card" id="reconciliationCard">
+        <summary><span id="reconciliationSummary">Inventory reconciliation (0)</span></summary>
+        <div class="collapse-body">
+          <p>Clover sales are always counted in sales reports even when recorded stock is too low. Physically count flagged products and set the current total here.</p>
+          <div class="reconciliation-list" id="reconciliationList"><div class="small-note">No reconciliation needed.</div></div>
         </div>
       </details>
 

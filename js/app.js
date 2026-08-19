@@ -78,9 +78,11 @@
     el.className='auth-error'+(type==='success'?' success':type==='info'?' info':'');
   }
   function showInvitePasswordSetup(){
+    document.body.classList.add('password-setup-required');
     $('passwordSetupOverlay').classList.add('active');
     $('passwordSetupOverlay').setAttribute('aria-hidden','false');
     setInviteMessage('','info');
+    setTimeout(()=>$('invitePassword')?.focus(),50);
   }
   $('inviteSetPasswordBtn').onclick=async()=>{
     const password=$('invitePassword').value;
@@ -100,6 +102,7 @@
       history.replaceState({},document.title,url.pathname+(url.search||''));
       $('passwordSetupOverlay').classList.remove('active');
       $('passwordSetupOverlay').setAttribute('aria-hidden','true');
+      document.body.classList.remove('password-setup-required');
       $('invitePassword').value='';$('inviteConfirmPassword').value='';
       toast('Password created. Your account is ready.');
     }catch(error){

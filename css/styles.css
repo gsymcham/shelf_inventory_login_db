@@ -1033,3 +1033,54 @@ body.is-manager .admin-sensitive{display:none!important}
   .reconciliation-actions,.access-request-actions{justify-content:flex-start}
   .reconciliation-entry input{width:110px}
 }
+
+/* V13.3 password-setup screen layout fix */
+.password-setup-overlay{
+  position:fixed!important;
+  top:0!important;
+  left:0!important;
+  right:auto!important;
+  bottom:auto!important;
+  width:100vw!important;
+  height:100vh!important;
+  height:100dvh!important;
+  margin:0!important;
+  box-sizing:border-box!important;
+  display:none;
+  place-items:center;
+  overflow:auto;
+  padding:24px!important;
+  background:var(--paper)!important;
+  backdrop-filter:none!important;
+  z-index:99999!important;
+}
+.password-setup-overlay.active{
+  display:grid!important;
+}
+.password-setup-card{
+  position:relative!important;
+  width:min(420px,calc(100vw - 32px))!important;
+  max-width:420px!important;
+  min-width:0!important;
+  margin:auto!important;
+  box-sizing:border-box!important;
+}
+body.password-setup-required{
+  overflow:hidden!important;
+}
+body.password-setup-required #app,
+body.password-setup-required nav,
+body.password-setup-required .panel-overlay,
+body.password-setup-required .modal-overlay,
+body.password-setup-required .toast{
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+body.password-setup-required #passwordSetupOverlay{
+  visibility:visible!important;
+  pointer-events:auto!important;
+}
+@media(max-width:480px){
+  .password-setup-overlay{padding:16px!important}
+  .password-setup-card{width:100%!important}
+}

@@ -6,7 +6,7 @@
   let cloverConnection=null;
 
   const $=id=>document.getElementById(id);
-  let inventory=[],categories=[],distributors=[],categoryRecords=[],distributorRecords=[],adminUsers=[],manageState=null,currentUser=null,userRole='staff',channel=null,currentEditId=null,pendingBarcode=null,scanMode='edit',quickProduct=null,authMode='signin',html5QrCode=null,camRunning=false,panelQrCode=null,panelCameraRunning=false,historyPage=1,historyTotal=0;
+  let inventory=[],categories=[],distributors=[],categoryRecords=[],distributorRecords=[],adminUsers=[],manageState=null,currentUser=null,userRole='staff',passwordSetupRequired=false,channel=null,currentEditId=null,pendingBarcode=null,scanMode='edit',quickProduct=null,authMode='signin',html5QrCode=null,camRunning=false,panelQrCode=null,panelCameraRunning=false,historyPage=1,historyTotal=0;
   const money=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'});
   function showAuthMessage(message,type='error'){$('authError').textContent=message;$('authError').className='auth-error'+(type==='success'?' success':type==='info'?' info':'')}
   function setAuthMode(m){
@@ -67,10 +67,11 @@
   $('authConfirmPassword').addEventListener('keydown',e=>{if(e.key==='Enter')$('authSubmit').click()});
 
   function invitationPasswordRequired(){
-    const meta=currentUser?.user_metadata||{};
-    const query=new URLSearchParams(window.location.search);
-    const hash=new URLSearchParams(window.location.hash.replace(/^#/,''));
-    return meta.must_set_password===true||query.get('invited')==='1'||hash.get('type')==='invite';
+    // The database profile flag is the only source of truth.
+    // Do not gate based on URL parameters or user metadata:
+    // invite URLs can be revisited/shared and Supabase metadata updates are merged,
+    // which can leave stale must_set_password values behind.
+    return passwordSetupRequired===true;
   }
   function setInviteMessage(message,type=''){
     const el=$('invitePasswordMessage');
@@ -97,6 +98,13 @@
       const {data,error}=await db.auth.updateUser({password,data:meta});
       if(error)throw error;
       currentUser=data?.user||currentUser;
+      const {error:clearError}=await db.rpc('complete_password_setup');
+      if(clearError)throw clearError;
+      passwordSetupRequired=false;
+      await loadRole();
+
+      // Clean any old invite markers from the address bar, but they no longer
+      // control access to the password screen.
       const url=new URL(window.location.href);
       url.searchParams.delete('invited');
       history.replaceState({},document.title,url.pathname+(url.search||''));
@@ -104,6 +112,8 @@
       $('passwordSetupOverlay').setAttribute('aria-hidden','true');
       document.body.classList.remove('password-setup-required');
       $('invitePassword').value='';$('inviteConfirmPassword').value='';
+      subscribe();
+      await loadInventory();
       toast('Password created. Your account is ready.');
     }catch(error){
       setInviteMessage(error?.message||'Unable to create password.');
@@ -111,9 +121,16 @@
       btn.disabled=false;btn.textContent='Create password';
     }
   };
-  $('signOutBtn').onclick=async()=>{const {error}=await db.auth.signOut();if(error){console.error('Sign-out failed:',error);toast(error.message)}};
+  $('signOutBtn').onclick=async()=>{
+    const {error}=await db.auth.signOut();
+    if(error){console.error('Sign-out failed:',error);toast(error.message);return}
+    passwordSetupRequired=false;
+    document.body.classList.remove('password-setup-required');
+    $('passwordSetupOverlay')?.classList.remove('active');
+    $('passwordSetupOverlay')?.setAttribute('aria-hidden','true');
+  };
   let authInitialized=false;
-  async function applySession(session){currentUser=session?.user||null;document.body.classList.toggle('authenticated',!!currentUser);$('signOutBtn').style.display=currentUser?'block':'none';$('userEmail').textContent=currentUser?.email||'';if(currentUser){try{await loadRole();subscribe();await loadInventory();if(invitationPasswordRequired())showInvitePasswordSetup()}catch(error){console.error('Session initialization failed:',error)}}else{inventory=[];userRole='staff';document.body.classList.remove('is-admin','is-manager');sync('Offline')}document.body.classList.remove('auth-loading');authInitialized=true}
+  async function applySession(session){currentUser=session?.user||null;document.body.classList.toggle('authenticated',!!currentUser);$('signOutBtn').style.display=currentUser?'block':'none';$('userEmail').textContent=currentUser?.email||'';if(currentUser){try{await loadRole();if(invitationPasswordRequired()){showInvitePasswordSetup();return}subscribe();await loadInventory()}catch(error){console.error('Session initialization failed:',error)}}else{inventory=[];userRole='staff';document.body.classList.remove('is-admin','is-manager');sync('Offline')}document.body.classList.remove('auth-loading');authInitialized=true}
   db.auth.onAuthStateChange((event,session)=>{if(!authInitialized||event==='SIGNED_IN'||event==='SIGNED_OUT'||event==='USER_UPDATED')applySession(session)});
   async function initializeAuth(){try{const {data:{session},error}=await db.auth.getSession();if(error)throw error;await applySession(session)}catch(error){console.error('Unable to restore session:',error);showAuthMessage(error?.message||'Unable to restore session. Please sign in again.');await applySession(null)}}
   initializeAuth();
@@ -151,7 +168,7 @@
   function switchView(name){if(name==='admin'&&!canManage())name='scan';Object.entries(views).forEach(([k,v])=>v&&v.classList.toggle('active',k===name));navBtns.forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='inventory')renderList();if(name==='export')renderStats();if(name==='admin')renderAdmin();if(name==='profile')loadMyProfile();if(name==='scan')clearScanSearch()}
   navBtns.forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
   function applyRoleUI(){document.body.classList.toggle('is-admin',isAdmin());document.body.classList.toggle('is-manager',isManager());$('roleChip').style.display='inline-block';$('roleChip').textContent=isAdmin()?'ADMIN':isManager()?'MANAGER':'STAFF';$('addCategoryBtn').style.display=canManage()?'block':'none';$('addDistributorBtn').style.display=canManage()?'block':'none'}
-  async function loadRole(){userRole='staff';if(!currentUser)return;const {data,error}=await db.from('profiles').select('role').eq('id',currentUser.id).maybeSingle();if(!error&&data?.role)userRole=data.role;applyRoleUI()}
+  async function loadRole(){userRole='staff';passwordSetupRequired=false;if(!currentUser)return;const {data,error}=await db.from('profiles').select('role,password_setup_required').eq('id',currentUser.id).maybeSingle();if(!error&&data?.role)userRole=data.role;passwordSetupRequired=data?.password_setup_required===true;applyRoleUI()}
   function setProfileMessage(id,message,type=''){const el=$(id);if(!el)return;el.textContent=message;el.className='profile-message'+(type?' '+type:'')}
   function loadMyProfile(){if(!currentUser)return;$('profileName').value=currentUser.user_metadata?.full_name||currentUser.user_metadata?.name||'';$('profileEmail').value=currentUser.email||'';setProfileMessage('profileMessage','');setProfileMessage('passwordMessage','')}
   $('profileSaveName').onclick=async()=>{const name=$('profileName').value.trim(),btn=$('profileSaveName');if(!name)return setProfileMessage('profileMessage','Enter your full name.','error');btn.disabled=true;btn.textContent='Saving…';setProfileMessage('profileMessage','');const {data,error}=await db.auth.updateUser({data:{...currentUser.user_metadata,full_name:name,name:name}});btn.disabled=false;btn.textContent='Save name';if(error)return setProfileMessage('profileMessage',error.message,'error');currentUser=data.user;setProfileMessage('profileMessage','Name updated successfully.','success');if(isAdmin())await loadAdminUsers()};

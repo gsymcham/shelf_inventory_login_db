@@ -110,12 +110,14 @@ Deno.serve(async (req) => {
     if (!invited?.user?.id) throw new Error("Supabase did not return the invited user.");
 
     // Ensure the invited account starts as Staff without changing existing elevated users.
-    await admin.from("profiles").upsert({
+    const { error: profileError } = await admin.from("profiles").upsert({
       id: invited.user.id,
       email: request.email,
       role: "staff",
       is_active: true,
-    }, { onConflict: "id", ignoreDuplicates: true });
+      password_setup_required: true,
+    }, { onConflict: "id" });
+    if (profileError) throw profileError;
 
     const { error: updateError } = await admin
       .from("account_requests")
